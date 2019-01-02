@@ -5,9 +5,9 @@ import sklearn
 from sklearn.ensemble import RandomForestRegressor
 from collections import Counter
 import sys, os
-
-sys.path.append("../functions/")
-import smooth_base as smooth_rf
+#
+#sys.path.append("../functions/")
+import smooth_rf
 
 def test_depth_per_node():
     """
