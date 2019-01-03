@@ -9,16 +9,263 @@ import progressbar
 import sparse
 import scipy.sparse
 from collections import Counter
-import sklearn 
+import sklearn
 import sklearn.ensemble
 import copy
 import quadprog
 import scipy.sparse
 
 # some built functions libraries
-import projected_grad_lamb_update as projgrad
+# sys.path.append("../../filament_and_rfdepth/code/functions/")
+# import projected_grad_lamb_update as projgrad
+import smooth_base
+from smooth_base import depth_per_node
 
-# Kernel creation 
+##################################
+# Base Tree and Forest Structure #
+##################################
+# Comments:
+# this following 3 functions were
+# originally developed by me for a different project and then used in a
+# class project at CMU, this is don't copied illegally, I just haven't
+# linking all the older versions.
+
+
+def make_Vt_mat(random_forest, data, verbose = True, depth_dict = None):
+    """
+    makes set of V_{t,\lambda} matrices for a random forest
+    """
+    n_tree = random_forest.n_estimators
+    forest = random_forest.estimators_
+
+    if verbose:
+        bar = progressbar.ProgressBar()
+        first_iter = bar(np.arange(n_tree))
+    else:
+        first_iter = range(n_tree)
+
+    dict_out = dict()
+    for tree_idx in first_iter:
+        if depth_dict is None:
+            dict_out[tree_idx] = _make_Vt_mat_tree(forest[tree_idx], data)
+        else:
+            dict_out[tree_idx] = _make_Vt_mat_tree(forest[tree_idx], data,
+                                            depth_vec = depth_dict[tree_idx])
+
+    return dict_out
+
+def test_make_Vt_mat():
+    """
+    tests for make_Vt_mat
+    """
+    X_train = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
+        np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
+    axis = 0)
+    y_train = np.concatenate((np.zeros(100, dtype = np.int),
+                             np.ones(100, dtype = np.int)))
+    amount = np.int(200)
+    s = 20
+    c = y_train[:amount]
+    # creating a random forest
+    rf_class_known = sklearn.ensemble.RandomForestClassifier(
+                                                        n_estimators = 100,
+                                                        min_samples_leaf = 1)
+    fit_rf_known = rf_class_known.fit(X = np.array(X_train)[:amount,:],
+                                      y = y_train[:amount].ravel())
+    random_forest = fit_rf_known
+
+    data = np.array(X_train[:amount,:])
+
+    Vt_dict = make_Vt_mat(random_forest, data, verbose = False)
+
+    assert len(Vt_dict) == 100, \
+     "incorrect number of trees suggested in the full Vt output"
+
+    for _ in range(10):
+        r_idx = np.random.randint(100)
+        random_Vt_dict = Vt_dict[r_idx]
+
+        assert type(random_Vt_dict) == dict, \
+         "output of _make_Vt_mat_tree is not a dictionary"
+
+        assert np.all([x.shape[0] == data.shape[0] \
+         for x in random_Vt_dict.values()]), \
+         "output of _make_Vt_mat_tree elements have incorrect number of rows"
+
+        assert np.sum([x.shape[1]  for x in random_Vt_dict.values()]) == \
+         len(random_forest.estimators_[r_idx].tree_.children_left), \
+         "output of split of Vt matrices have more columns than a" + \
+         " full Vt mat would"
+
+
+def _make_Vt_mat_tree(tree, data, depth_vec = None):
+    """
+    makes a set of V_{t,\lambda} matrices for a specific tree
+    in a random forest (index t)
+    """
+    if depth_vec is None:
+        depth_vec = depth_per_node(tree)
+
+    Vt_full = tree.decision_path(data)
+
+    unique_depth_values = np.array(list(dict(Counter(depth_vec)).keys()))
+    unique_depth_values.sort()
+
+    dict_out = {i: Vt_full[:,depth_vec == i] for i in unique_depth_values}
+
+    return dict_out
+
+def test_make_Vt_mat_tree():
+    """
+    test for _make_Vt_mat_tree
+    """
+    X_train = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
+        np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
+    axis = 0)
+    y_train = np.concatenate((np.zeros(100, dtype = np.int),
+                             np.ones(100, dtype = np.int)))
+    amount = np.int(200)
+    s = 20
+    c = y_train[:amount]
+    # creating a random forest
+    rf_class_known = sklearn.ensemble.RandomForestClassifier(
+                                                        n_estimators = 1,
+                                                        min_samples_leaf = 1)
+    fit_rf_known = rf_class_known.fit(X = np.array(X_train)[:amount,:],
+                                      y = y_train[:amount].ravel())
+    forest = fit_rf_known.estimators_
+    tree = forest[0]
+
+    data = np.array(X_train[:amount,:])
+
+    Vt_dict = _make_Vt_mat_tree(tree,data)
+
+    assert type(Vt_dict) == dict, \
+     "output of _make_Vt_mat_tree is not a dictionary"
+
+    assert np.all([x.shape[0] == data.shape[0] for x in Vt_dict.values()]), \
+     "output of _make_Vt_mat_tree elements have incorrect number of rows"
+
+    assert np.sum([x.shape[1]  for x in Vt_dict.values()]) == \
+     len(tree.tree_.children_left), \
+     "output of split of Vt matrices have more columns than a full Vt mat would"
+
+
+
+
+def make_Ut_prime_mat_no_sym(Vt_dict_new, Vt_dict,
+    max_depth = None, verbose = True):
+    """
+    calculates the Ut_prime_not_symmetric set of matrices (for each Vt, Vt_new),
+    returns dictionary with Ut_prime array for each lambda
+
+    assume not points are in both areas (otherwise ii entry would be 0)
+    """
+
+    assert len(Vt_dict_new) == len(Vt_dict), \
+     "Both dictionaries should be the same length (number of trees)."
+
+    n_tree = len(Vt_dict)
+    n_obs_train = Vt_dict[list(Vt_dict.keys())[0]][0].shape[0]
+    n_obs_test = Vt_dict_new[list(Vt_dict_new.keys())[0]][0].shape[0]
+
+    # max_depth calculation
+    if max_depth is None:
+        max_depth_value = 0
+        for idx in range(n_tree):
+            max_depth_value = np.max([max_depth_value,
+                                      np.max(list(Vt_dict_new.keys())),
+                                      np.max(list(Vt_dict.keys()))])
+        max_depth = max_depth_value
+
+    assert np.floor(max_depth) == np.ceil(max_depth), \
+     "max_depth is not a integer"
+
+    max_depth = np.int(max_depth)
+
+
+    if verbose:
+        bar = progressbar.ProgressBar()
+        first_iter = bar(np.arange(max_depth, dtype = np.int))
+    else:
+        first_iter = range(max_depth)
+
+    Ut_prime_dict = dict() # by |lambda|
+
+
+    for lambda_idx in first_iter:
+        #Ut_prime_inner_array = sparse.DOK(shape = (n_tree, n_obs, n_obs))
+
+        tt_all = np.zeros(shape = (0,))
+        xx_all = np.zeros(shape = (0,))
+        yy_all = np.zeros(shape = (0,))
+        values_all = np.zeros(shape = (0,))
+        for tree_idx in range(n_tree):
+            if lambda_idx in Vt_dict[tree_idx].keys():
+                Ut = Vt_dict_new[tree_idx][lambda_idx].dot(
+                                            Vt_dict[tree_idx][lambda_idx].T
+                                                      )
+
+                # Ut_prime_inner_array[tree_idx,:,:] = Ut_prime.toarray()
+                xx, yy, values = scipy.sparse.find(Ut)
+                tt = np.array([tree_idx]*xx.shape[0], dtype = np.int)
+
+                tt_all = np.concatenate((tt_all, tt))
+                xx_all = np.concatenate((xx_all, xx))
+                yy_all = np.concatenate((yy_all, yy))
+                values_all = np.concatenate((values_all, values))
+
+
+        Ut_prime_dict[lambda_idx] = sparse.COO(coords = [tt_all, xx_all, yy_all],
+                                               data = values_all,
+                                               shape = (n_tree, n_obs_test,
+                                                                n_obs_train))
+
+    return Ut_prime_dict
+
+
+def remove_0_from_Ut_prime(Ut_prime_dict):
+    """
+    removes lambda index 0 from the Ut_prime dictionary and reorders elements
+    so that you now have 0 to (|lambdas| - 1) indices.
+    """
+    Ut_prime_out = dict()
+
+    keys = np.array(list(Ut_prime_dict.keys()))
+
+    assert np.all(np.ceil(keys) == np.floor(keys)), \
+     "keys are integer values."
+
+    assert np.any(keys == 0), \
+     "at least 1 key needs to be '0'."
+
+    for l_idx in keys[keys != 0]:
+        Ut_prime_out[l_idx - 1] = Ut_prime_dict[l_idx ]
+
+    return Ut_prime_out
+
+def test_remove_0_from_Ut_prime():
+    """
+    test of remove_0_from_Ut_prime
+    """
+    test_dict = {0: 0, 1: 1, 2: 2, 3: 4}
+    test_dict_updated = remove_0_from_Ut_prime(test_dict)
+
+    assert np.all([test_dict[1] == test_dict_updated[0],
+                   test_dict[2] == test_dict_updated[1],
+                   test_dict[3] == test_dict_updated[2]]), \
+     "objects in the dictionary don't get preserved correctly."
+
+    assert len(test_dict_updated) == len(test_dict) - 1, \
+     "incorrect length of returned dictionary"
+
+
+# New functions:
+
+
+# Kernel creation
 def make_kernel(Ut_prime_dict, lamb_vec = None):
     """
     Makes a kernel from a given Ut_prime_dict and lambda vector.
@@ -51,29 +298,29 @@ def test_make_kernel():
         (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
         np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
     axis = 0)
-    y_train = np.concatenate((np.zeros(100, dtype = np.int), 
+    y_train = np.concatenate((np.zeros(100, dtype = np.int),
                              np.ones(100, dtype = np.int)))
     amount = np.int(200)
     # creating a random forest
     rf_class_known = sklearn.ensemble.RandomForestClassifier(
                                                         n_estimators = 1,
                                                         min_samples_leaf = 1)
-    random_forest = rf_class_known.fit(X = np.array(X_train)[:amount,:], 
+    random_forest = rf_class_known.fit(X = np.array(X_train)[:amount,:],
                                       y = y_train[:amount].ravel())
 
     data = np.array(X_train[:amount,:])
 
-    depth_dict, max_depth = projgrad.calc_depth_for_forest(random_forest, 
+    depth_dict, max_depth = smooth_base.calc_depth_for_forest(random_forest,
                                                   verbose = False)
 
-    Vt_dict = projgrad.make_Vt_mat(random_forest, data, depth_dict = depth_dict, 
+    Vt_dict = make_Vt_mat(random_forest, data, depth_dict = depth_dict,
                           verbose = False)
 
-    Ut_prime_dict = projgrad.make_Ut_prime_mat_no_sym(Vt_dict, Vt_dict,
+    Ut_prime_dict = make_Ut_prime_mat_no_sym(Vt_dict, Vt_dict,
                                       max_depth = max_depth,
                                       verbose = False)
 
-    Ut_prime_dict = projgrad.remove_0_from_Ut_prime(Ut_prime_dict)
+    Ut_prime_dict = remove_0_from_Ut_prime(Ut_prime_dict)
 
     K_mat = make_kernel(Ut_prime_dict)
 
@@ -88,7 +335,7 @@ def test_make_kernel():
 
 def depth_dist(K_mat):
     """
-    Calculates the "depth distance" relative to a kernel (this allows for 
+    Calculates the "depth distance" relative to a kernel (this allows for
     any weighting of the depths).
     This function does DD_ij = d(t(x_i)) - d(parent(x_i,x_j)) and is not
     symmetric.
@@ -116,11 +363,11 @@ def categorical_depth_expand(D_mat):
     assert(np.min(D_mat) >= 0)
     z_size = np.max(D_mat) + 1
 
-    xx, yy = np.indices(D_mat.shape) 
+    xx, yy = np.indices(D_mat.shape)
 
     full_indices = (D_mat.ravel(), xx.ravel(), yy.ravel())
 
-    s_mat = sparse.coo.COO(coords = full_indices,data = 1, 
+    s_mat = sparse.coo.COO(coords = full_indices,data = 1,
                            shape = (z_size, D_mat.shape[0], D_mat.shape[1]))
 
     return s_mat
@@ -153,7 +400,7 @@ def max_depth_dist(K_mat = None, DD_mat = None):
 
     This function does DD_ij = max{
                                 d(t(x_i)) - d(parent(x_i,x_j)),
-                                d(t(x_j)) - d(parent(x_i,x_j))} 
+                                d(t(x_j)) - d(parent(x_i,x_j))}
     and is symmetric.
     """
 
@@ -161,7 +408,7 @@ def max_depth_dist(K_mat = None, DD_mat = None):
         "K_mat and DD_mat can't both be None"
     if DD_mat is None:
         DD_mat = depth_dist(K_mat)
-    
+
     n = DD_mat.shape[0]
 
     return np.max(np.stack((DD_mat, DD_mat.T), axis = 0), axis = 0)
@@ -172,7 +419,7 @@ def min_depth_dist(K_mat = None, DD_mat = None):
 
     This function does DD_ij = min{
                                 d(t(x_i)) - d(parent(x_i,x_j)),
-                                d(t(x_j)) - d(parent(x_i,x_j))} 
+                                d(t(x_j)) - d(parent(x_i,x_j))}
     and is symmetric.
     """
     assert not np.all([K_mat is None,DD_mat is None]), \
@@ -191,29 +438,29 @@ def test_depth_dist():
         (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
         np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
     axis = 0)
-    y_train = np.concatenate((np.zeros(100, dtype = np.int), 
+    y_train = np.concatenate((np.zeros(100, dtype = np.int),
                              np.ones(100, dtype = np.int)))
     amount = np.int(200)
     # creating a random forest
     rf_class_known = sklearn.ensemble.RandomForestClassifier(
                                                         n_estimators = 1,
                                                         min_samples_leaf = 1)
-    random_forest = rf_class_known.fit(X = np.array(X_train)[:amount,:], 
+    random_forest = rf_class_known.fit(X = np.array(X_train)[:amount,:],
                                       y = y_train[:amount].ravel())
 
     data = np.array(X_train[:amount,:])
 
-    depth_dict, max_depth = projgrad.calc_depth_for_forest(random_forest, 
+    depth_dict, max_depth = smooth_base.calc_depth_for_forest(random_forest,
                                                   verbose = False)
 
-    Vt_dict = projgrad.make_Vt_mat(random_forest, data, depth_dict = depth_dict, 
+    Vt_dict = make_Vt_mat(random_forest, data, depth_dict = depth_dict,
                           verbose = False)
 
-    Ut_prime_dict = projgrad.make_Ut_prime_mat_no_sym(Vt_dict, Vt_dict,
+    Ut_prime_dict = make_Ut_prime_mat_no_sym(Vt_dict, Vt_dict,
                                       max_depth = max_depth,
                                       verbose = False)
 
-    Ut_prime_dict = projgrad.remove_0_from_Ut_prime(Ut_prime_dict)
+    Ut_prime_dict = remove_0_from_Ut_prime(Ut_prime_dict)
 
     K_mat = make_kernel(Ut_prime_dict)
 
@@ -249,7 +496,7 @@ def depth_dist_tree(Vt_dict_single, y):
 
 # a, mi, ma = depth_dist_tree(Vt_dict[0], y_test)
 
-## maybe plot color as true local mean (this is associated with leaves) 
+## maybe plot color as true local mean (this is associated with leaves)
 
 def dist_mat(X, verbose = True):
     n = X.shape[0]
@@ -257,21 +504,21 @@ def dist_mat(X, verbose = True):
 
     if verbose:
         bar = progressbar.ProgressBar()
-        itera = bar(np.arange(n))       
+        itera = bar(np.arange(n))
     else:
         itera = np.arange(n)
 
     if len(X.shape) > 1:
         for i in itera:
             for j in np.arange(i,n):
-                Dist_mat[i,j] = scipy.spatial.distance.euclidean(X[i,],X[j,]) 
+                Dist_mat[i,j] = scipy.spatial.distance.euclidean(X[i,],X[j,])
                 Dist_mat[j,i] = Dist_mat[i,j]
     else:
         for i in itera:
             Dist_mat[i,:] = np.abs(X[i]-X)
     return Dist_mat
 
-    
+
 
 
 def depth_vis_pairs(X, Mat, ax):
@@ -283,9 +530,9 @@ def depth_vis_pairs(X, Mat, ax):
     Dist_mat = np.zeros(shape = Mat.shape)
     for i in np.arange(n):
         for j in np.arange(i,n):
-            Dist_mat[i,j] = scipy.spatial.distance.euclidean(X[i,],X[j,]) 
+            Dist_mat[i,j] = scipy.spatial.distance.euclidean(X[i,],X[j,])
             Dist_mat[j,i] = Dist_mat[i,j]
-    # ravel Dist_mat, Mat, plot 
+    # ravel Dist_mat, Mat, plot
     ax.scatter(x = Dist_mat.ravel(), y = Mat.ravel())
 
     return Dist_mat
@@ -318,10 +565,10 @@ def _decision_list_nodes(children_right, children_left, idx=0, elders=list()):
         n = len(elders) + 1
         return [[idx]*n, elders + [idx]]
     else:
-        c_left = _decision_list_nodes(children_right, children_left, 
+        c_left = _decision_list_nodes(children_right, children_left,
                                         idx=children_left[idx],
                                         elders=elders + [idx])
-        c_right = _decision_list_nodes(children_right, children_left, 
+        c_right = _decision_list_nodes(children_right, children_left,
                                         idx=children_right[idx],
                                         elders=elders + [idx])
         return [c_left[0] + c_right[0],
@@ -398,7 +645,7 @@ def smooth(random_forest, X_trained, y_trained, X_tune=None, y_tune=None):
 
     Returns:
     --------
-    an updated RandomForestRegressor object with values for each node altered 
+    an updated RandomForestRegressor object with values for each node altered
     if desirable
 
     Comments:
@@ -408,21 +655,21 @@ def smooth(random_forest, X_trained, y_trained, X_tune=None, y_tune=None):
     samples.
     """
 
-    n_obs_trained = X_trained.shape[0] 
+    n_obs_trained = X_trained.shape[0]
     eps = 1/n_obs_trained
     numeric_eps = 1e-5
 
     if X_tune is None or y_tune is None:
         oob_logic = True
 
-    y_trained = y_trained.ravel() 
+    y_trained = y_trained.ravel()
     #^note that we should probably check that this is correct shape
 
     inner_rf = copy.deepcopy(random_forest)
 
     forest = inner_rf.estimators_
 
-    _, max_depth = projgrad.calc_depth_for_forest(random_forest, verbose=False)
+    _, max_depth = smooth_base.calc_depth_for_forest(random_forest, verbose=False)
     max_depth = np.int(max_depth)
     inner_rf.lamb = np.zeros((len(forest),max_depth + 1))
 
@@ -442,18 +689,18 @@ def smooth(random_forest, X_trained, y_trained, X_tune=None, y_tune=None):
         # _generate_sample_indices
         # from https://github.com/scikit-learn/scikit-learn/blob/bac89c253b35a8f1a3827389fbee0f5bebcbc985/sklearn/ensemble/forest.py#L78
         # just need to grab the tree's random state (t.random_state)
-        
+
         # trained "in bag observations"
         random_state = t.random_state
         sample_indices = \
-            sklearn.ensemble.forest._generate_sample_indices(random_state, 
+            sklearn.ensemble.forest._generate_sample_indices(random_state,
                                                              n_obs_trained)
         train_V = t.decision_path(X_trained[sample_indices,:])
         train_V_leaf = train_V[:,tree.children_left == -1]
 
         train_count = train_V_leaf.sum(axis = 0) # by column
         train_weight = train_count / np.sum(train_count)
-        train_value_sum = (train_V_leaf.T @ y_trained[sample_indices]) 
+        train_value_sum = (train_V_leaf.T @ y_trained[sample_indices])
 
 
         assert np.sum(train_count) == sample_indices.shape[0], \
@@ -461,14 +708,14 @@ def smooth(random_forest, X_trained, y_trained, X_tune=None, y_tune=None):
 
         np.testing.assert_allclose(
             np.array(tree.value[tree.children_left == -1,:,:]).ravel(),
-            np.array(train_value_sum / train_count).ravel(), 
+            np.array(train_value_sum / train_count).ravel(),
             err_msg = "weirdly prediction value is expected to be...")
 
         # observed information
         if oob_logic:
             oob_indices = \
                 sklearn.ensemble.forest._generate_unsampled_indices(
-                                                                 random_state, 
+                                                                 random_state,
                                                                  n_obs_trained)
             X_tune = X_trained[oob_indices,:]
             y_tune = y_trained[oob_indices]
@@ -477,12 +724,12 @@ def smooth(random_forest, X_trained, y_trained, X_tune=None, y_tune=None):
         obs_V_leaf = obs_V[:,tree.children_left == -1]
 
         obs_count = obs_V_leaf.sum(axis = 0).ravel() # by column
-        
+
         #---
-        # for clean division without dividing by 0 
+        # for clean division without dividing by 0
         obs_count_div = obs_count.copy()
         obs_count_div[obs_count_div == 0] = 1
-        #--- 
+        #---
         obs_weight = obs_count / np.sum(obs_count)
 
         #---
@@ -517,9 +764,9 @@ def smooth(random_forest, X_trained, y_trained, X_tune=None, y_tune=None):
 
         # COMMENT: FOR ERROR: Gamma can have linearly dependent columns...
         # how to think about (pinv?) - should have learned this implimentation
-        opt = quadprog.solve_qp(G = G.astype(np.float), 
-                                a = a.astype(np.float), 
-                                C = C.astype(np.float), 
+        opt = quadprog.solve_qp(G = G.astype(np.float),
+                                a = a.astype(np.float),
+                                C = C.astype(np.float),
                                 b = b.astype(np.float),
                                 meq = 1)
 
@@ -560,11 +807,11 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
         logic to do full process but keep same weights
     resample_tune: bool
         logic to tune / optimize with another bootstrap same from X
-    
+
 
     Returns:
     --------
-    an updated RandomForestRegressor object with values for each node altered 
+    an updated RandomForestRegressor object with values for each node altered
     if desirable
 
     Comments:
@@ -574,7 +821,7 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
     samples.
     """
 
-    n_obs_trained = X_trained.shape[0] 
+    n_obs_trained = X_trained.shape[0]
     eps = 1/n_obs_trained
     numeric_eps = 1e-5
 
@@ -585,14 +832,14 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
 
 
 
-    y_trained = y_trained.ravel() 
+    y_trained = y_trained.ravel()
     #^note that we should probably check that this is correct shape
 
     inner_rf = copy.deepcopy(random_forest)
 
     forest = inner_rf.estimators_
 
-    _, max_depth = projgrad.calc_depth_for_forest(random_forest,verbose=False)
+    _, max_depth = smooth_base.calc_depth_for_forest(random_forest,verbose=False)
     max_depth = np.int(max_depth)
 
     Gamma_all = np.zeros((0,max_depth + 1))
@@ -619,18 +866,18 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
         # _generate_sample_indices
         # from https://github.com/scikit-learn/scikit-learn/blob/bac89c253b35a8f1a3827389fbee0f5bebcbc985/sklearn/ensemble/forest.py#L78
         # just need to grab the tree's random state (t.random_state)
-        
+
         # trained "in bag observations"
         random_state = t.random_state
         sample_indices = \
-            sklearn.ensemble.forest._generate_sample_indices(random_state, 
+            sklearn.ensemble.forest._generate_sample_indices(random_state,
                                                              n_obs_trained)
         train_V = t.decision_path(X_trained[sample_indices,:])
         train_V_leaf = train_V[:,tree.children_left == -1]
 
         train_count = train_V_leaf.sum(axis = 0) # by column
         train_weight = train_count / np.sum(train_count)
-        train_value_sum = (train_V_leaf.T @ y_trained[sample_indices]) 
+        train_value_sum = (train_V_leaf.T @ y_trained[sample_indices])
 
 
         assert np.sum(train_count) == sample_indices.shape[0], \
@@ -638,21 +885,21 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
 
         np.testing.assert_allclose(
             np.array(tree.value[tree.children_left == -1,:,:]).ravel(),
-            np.array(train_value_sum / train_count).ravel(), 
+            np.array(train_value_sum / train_count).ravel(),
             err_msg = "weirdly prediction value is expected to be...")
 
         # observed information
         if oob_logic:
             oob_indices = \
                 sklearn.ensemble.forest._generate_unsampled_indices(
-                                                                 random_state, 
+                                                                 random_state,
                                                                  n_obs_trained)
             X_tune = X_trained[oob_indices,:]
             y_tune = y_trained[oob_indices]
 
         if resample_tune:
             resample_indices = \
-                sklearn.ensemble.forest._generate_sample_indices(None, 
+                sklearn.ensemble.forest._generate_sample_indices(None,
                                                                  n_obs_trained)
             X_tune = X_trained[resample_indices,:]
             y_tune = y_trained[resample_indices]
@@ -661,12 +908,12 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
         obs_V_leaf = obs_V[:,tree.children_left == -1]
 
         obs_count = obs_V_leaf.sum(axis = 0).ravel() # by column
-        
+
         #---
-        # for clean division without dividing by 0 
+        # for clean division without dividing by 0
         obs_count_div = obs_count.copy()
         obs_count_div[obs_count_div == 0] = 1
-        #--- 
+        #---
         obs_weight = obs_count / np.sum(obs_count)
 
         #---
@@ -709,15 +956,15 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
 
     # COMMENT: FOR ERROR: Gamma can have linearly dependent columns...
     # how to think about (pinv?) - should have learned this implimentation
-    opt = quadprog.solve_qp(G = G.astype(np.float), 
-                            a = a.astype(np.float), 
-                            C = C.astype(np.float), 
+    opt = quadprog.solve_qp(G = G.astype(np.float),
+                            a = a.astype(np.float),
+                            C = C.astype(np.float),
                             b = b.astype(np.float),
                             meq = 1)
 
     lamb = opt[0]
-    
-    # no constraints 
+
+    # no constraints
     if no_constraint:
         lamb = np.linalg.inv(G) @ Gamma_all.T @ \
             scipy.sparse.diags(np.array(obs_weight_non_zero_all).ravel()) @ \

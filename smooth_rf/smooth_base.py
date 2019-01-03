@@ -23,6 +23,10 @@ import numpy as np
 import scipy.sparse
 import sparse
 import progressbar
+import copy
+import sklearn.ensemble
+import sklearn
+import pdb
 
 ##################################
 # Base Tree and Forest Structure #
@@ -414,6 +418,7 @@ def take_gradient(y, Gamma, eta, weights, lamb):
     """
     Gamma_fill = Gamma @ lamb
     eta_fill = eta @ lamb
+    eta_fill[eta_fill == 0] = 1 # to avoid divide by 0.
     residuals = y - Gamma_fill / eta_fill
 
     assert np.any(eta_fill != 0), \
@@ -421,10 +426,10 @@ def take_gradient(y, Gamma, eta, weights, lamb):
         "try all positive lamb" +\
         "\n Ben: this may happen now - when using global structure"
 
-    grad_yhat = scipy.sparse.diag(1/eta_fill) @ Gamma - \
-                    scipy.sparse.diag(Gamma_fill/eta_fill**2)
+    grad_yhat = scipy.sparse.diags(1/eta_fill) @ Gamma - \
+                    scipy.sparse.diags(Gamma_fill/eta_fill**2) @ eta
 
-    grad = -2 * residuals.T @ scipy.sparse.diag(weights) @ grad_yhat
+    grad = -2 * residuals.T @ scipy.sparse.diags(weights) @ grad_yhat
 
     return grad
 
@@ -435,6 +440,7 @@ def calc_cost(y, Gamma, eta, weights, lamb):
     """
     Gamma_fill = Gamma @ lamb
     eta_fill = eta @ lamb
+    eta_fill[eta_fill == 0] = 1 # to avoid divide by 0.
     residuals = y - Gamma_fill / eta_fill
 
     return np.sum( (residuals**2) * weights)
@@ -511,6 +517,9 @@ def smooth(random_forest, X_trained=None, y_trained=None,
                         "provided input of X_tune/y_tune and resample_tune "+\
                         "parameters.")
 
+    if oob_logic or resample_tune:
+            n_obs_trained = X_trained.shape[0]
+
     inner_rf = copy.deepcopy(random_forest)
 
     forest = inner_rf.estimators_
@@ -527,8 +536,10 @@ def smooth(random_forest, X_trained=None, y_trained=None,
         bar = progressbar.ProgressBar()
         first_iter = bar(first_iter)
 
-
     # getting structure for tuning y_leaves and weights for each leaf
+    y_all = np.zeros((0,))
+    weight_all = np.zeros((0,))
+
     for t in first_iter:
         tree = t.tree_
 
@@ -570,15 +581,18 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
         obs_y_leaf = (obs_V_leaf.T @ y_tune) / obs_weight_div
 
+        y_all = np.concatenate((y_all, np.array(obs_y_leaf).ravel()))
+        weight_all = np.concatenate((weight_all,
+                                     np.array(obs_weight).ravel()))
 
     #---
     # Optimization
     #---
-    lamb = np.zeros(lamb.shape) #sanity check
+    lamb = np.zeros(Gamma.shape[1]) #sanity check
     lamb[0] = 1
 
     if not sanity_check:
-        lamb = subgrad_descent(obs_y_leaf, obs_weight,
+        lamb,lamb_last,c = subgrad_descent(y_all, weight_all,
                                Gamma, eta, t_idx_vec,
                                lamb_init=lamb, # no change
                                t_fix=subgrad_t_fix,
@@ -589,8 +603,7 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     #---
     # update random forest object (correct estimates from new lambda)
     #---
-
-    y_leaf_new_all = Gamma @ lamb / eta @ lamb
+    y_leaf_new_all = (Gamma @ lamb) / (eta @ lamb)
 
     start_idx = 0
     for t in forest:
@@ -605,9 +618,9 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
     inner_rf.lamb = lamb
 
-    return inner_rf
+    return inner_rf, lamb_last, c
 
-def subgrad_descent(y_leaf, weight_leaf,
+def subgrad_descent(y_leaf, weights_leaf,
                     Gamma, eta, tree_idx_vec,
                     lamb_init, t_fix=1, num_steps=1000,
                     constrained=True, verbose=True):
@@ -625,7 +638,6 @@ def subgrad_descent(y_leaf, weight_leaf,
         average y values for each leaf (observed values)
     weight_leaf : array (Tn,)
         number of observations observed at certain leaf
-
     Gamma : array (Tn, K)
         A horizontal stacking of Gamma matrices as defined above for all trees
         in the forest. See details below
@@ -686,6 +698,8 @@ def subgrad_descent(y_leaf, weight_leaf,
 
     num_trees = np.int(np.max(tree_idx_vec) + 1)
 
+    cost_all = [cost_best]
+
     for s_step in first_iter:
         # select tree idx
         tree_idx = np.random.choice(num_trees)
@@ -709,7 +723,88 @@ def subgrad_descent(y_leaf, weight_leaf,
             cost_best = cost_new
             lamb_best = lamb
 
-    return lamb_best
+        cost_all = cost_all +[cost_new]
+
+    return lamb_best, lamb, cost_all
+
+
+
+
+
+def generate_data(large_n = 650):
+    """
+    generate data structure
+
+    reproducing example on page 114 (Microsoft)
+    """
+    n = np.int(large_n / (4 + 1/3))
+    unif_prob = .6
+    norm_prob = 1 - unif_prob
+    rotate_angle = -10
+    delta = .05
+
+    d1_n = np.random.normal(size = (np.int(n * norm_prob),2),
+                            loc = [.5,.9],
+                            scale = [.33,.05])
+    d1_u = np.vstack( ( np.random.uniform(size = np.int(n * unif_prob)),
+                        np.random.uniform(size = np.int(n * unif_prob) ,
+                                          low = .8)) ).T
+
+
+    d2_n = np.random.normal(size = (np.int(n * norm_prob),2),
+                            loc = [.9,.5],
+                            scale = [.05,.33])
+    d2_u = np.vstack( ( np.random.uniform(size = np.int(n * unif_prob), low = .8),
+                        np.random.uniform(size = np.int(n * unif_prob))) ).T
+
+    d3_u_pre = np.random.uniform(size = (n,2), high = .5)
+    d3_u_rotate = d3_u_pre @ \
+                    np.array([[np.cos(rotate_angle * (np.pi/180)),
+                                    -np.sin(rotate_angle * (np.pi/180))],
+                              [np.sin(rotate_angle * (np.pi/180)),
+                                    np.cos(rotate_angle * (np.pi/180))]])
+
+    d3_u = d3_u_rotate + np.array([.175,.075])
+
+
+    d4_1_n = np.random.normal(size = (np.int(n * 2/3 * norm_prob),2),
+                              loc = [.5,.1],
+                              scale = [.33,.05])
+    d4_1_u = np.vstack( ( np.random.uniform(size = np.int(n * 2/3 * unif_prob)),
+                        np.random.uniform(size = np.int(n * 2/3 * unif_prob),
+                                          high = .2)) ).T
+
+    d4_2_n = np.random.normal(size = (np.int(n * norm_prob),2),
+                              loc = [.1,.5], scale = [.05,.33])
+    d4_2_u = np.vstack( ( np.random.uniform(size = np.int(n * 2/3 * unif_prob),
+                                            high = .2),
+                        np.random.uniform(size = np.int(n * 2/3 * unif_prob) )) ).T
+
+
+    data = np.vstack((d1_n, d1_u,
+                      d2_n, d2_u,
+                      d3_u,
+                      d4_1_n, d4_1_u, d4_2_n, d4_2_u))
+
+    n_square = np.sum([x.shape[0] for x in [d4_1_n, d4_1_u, d4_2_n, d4_2_u]],
+                      dtype = np.int)
+
+
+    y = np.array([2]*(d1_n.shape[0] + d1_u.shape[0]) +\
+                 [3]*(d2_n.shape[0] + d2_u.shape[0]) +\
+                 [0]*(d3_u.shape[0]) + [1]*n_square, dtype = np.int)
+
+    # removing points:
+    rm_logic = (data[:,0] > 1 + delta) + (data[:,0] < 0 - delta) +\
+               (data[:,1] > 1 + delta) + (data[:,1] < 0 - delta)
+    keep_logic = rm_logic == 0
+
+    data = data[keep_logic,:]
+    y = y[keep_logic]
+
+    return data, y
+
+
 
 
 
