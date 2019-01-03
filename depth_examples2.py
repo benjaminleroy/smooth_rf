@@ -163,15 +163,16 @@ def cv_vis(cv_mat, idx_range=None):
                                         "lower": mu + sd,
                                         "upper": mu - sd,
                                         "idx range": idx_range,
-                                        "model name": m_idx})
+                                        "model name": str(m_idx)})
 
-    data_vis = data_vis.append(data_vis_inner)
+        data_vis = data_vis.append(data_vis_inner)
 
     ggout = ggplot(data_vis, aes(x = "idx range",
                                  color = "model name")) +\
         geom_line(aes(y = "mu")) +\
         geom_point(aes(y = "mu")) +\
-        geom_ribbon(aes(ymin = "lower", ymax = "upper"),alpha = .3) +\
+        geom_ribbon(aes(ymin = "lower", ymax = "upper",
+                        color= "model name"),alpha = .3) +\
         labs(y = "Cross-Validation Error",
              x = "Index")
 
@@ -182,8 +183,9 @@ create_figs = True
 if create_figs:
     # single tree
     if select == 1:
-        score_mat_reg1 = check_rf_grow(650, 10000, n_draws = 20, ntree = 1)
-        reg_vis1, data_vis = cv_vis(score_mat_reg1[1:,:], np.arange(2,50))
+        score_mat_reg1 = check_rf_grow(650, 10000, n_draws = 20, ntree = 1,
+                                       depth_range = np.arange(2,50,2))
+        reg_vis1, data_vis = cv_vis(score_mat_reg1, np.arange(2,50,2))
 
         data_vis.to_csv("images/tree1_reg.csv")
 
@@ -195,22 +197,26 @@ if create_figs:
 
     # 10 trees
     if select == 10:
-        score_mat_reg = check_rf_grow(650, 10000, n_draws = 20, ntree = 10)
-        reg_vis10, data_vis10 = cv_vis(score_mat_reg[1:,:], np.arange(2,50))
+        score_mat_reg = check_rf_grow(650, 10000, n_draws = 20, ntree = 10,
+                                      depth_range = np.arange(2,50,2))
+        reg_vis10, data_vis10 = cv_vis(score_mat_reg, np.arange(2,50,2))
 
         data_vis10.to_csv("images/tree10_reg.csv")
 
-        save_as_pdf_pages([reg_vis10 + labs(title = "10 tree, reg") + theme(figure_size = (8,6))],
-                        filename = "images/tree10_reg.pdf")
+        save_as_pdf_pages([reg_vis10 + labs(title = "10 tree, reg") +\
+                           theme(figure_size = (8,6))],
+                         filename = "images/tree10_reg.pdf")
 
     # 300 trees
     if select == 300:
-        score_mat_reg300 = check_rf_grow(650, 10000, n_draws = 20, ntree = 300)
-        reg_vis300, data_vis300 = cv_vis(score_mat_reg300[1:,:], np.arange(2,50))
+        score_mat_reg300 = check_rf_grow(650, 10000, n_draws = 20, ntree = 300,
+                                         depth_range = np.arange(2,50,2))
+        reg_vis300, data_vis300 = cv_vis(score_mat_reg300, np.arange(2,50,2))
 
         data_vis300.to_csv("images/tree10_reg.csv")
 
-        save_as_pdf_pages([reg_vis300 + labs(title = "300 tree, reg") + theme(figure_size = (8,6))],
-                        filename = "images/tree300_reg.pdf")
+        save_as_pdf_pages([reg_vis300 + labs(title = "300 tree, reg") +\
+                           theme(figure_size = (8,6))],
+                         filename = "images/tree300_reg.pdf")
 
 

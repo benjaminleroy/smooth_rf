@@ -14,6 +14,7 @@ import sklearn.ensemble
 import copy
 import quadprog
 import scipy.sparse
+import pdb
 
 # some built functions libraries
 # sys.path.append("../../filament_and_rfdepth/code/functions/")
@@ -340,8 +341,7 @@ def depth_dist(K_mat):
     This function does DD_ij = d(t(x_i)) - d(parent(x_i,x_j)) and is not
     symmetric.
     """
-
-    own_depth = np.diag(K_mat)
+    own_depth = np.diag(K_mat.todense())
     n = own_depth.shape[0]
 
     assert not np.all(own_depth == 0), \
@@ -469,7 +469,7 @@ def test_depth_dist():
     assert K_mat.shape == DD_mat.shape, \
         "dimensions between K_mat and DD_mat should be the same"
 
-    assert np.all(np.diag(DD_mat) == 0), \
+    assert np.all(np.diag(DD_mat.todense()) == 0), \
         "diagonal should be naturally 0 (has error)"
 
     assert np.all(DD_mat >= 0), \
