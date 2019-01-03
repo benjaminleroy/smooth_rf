@@ -182,8 +182,7 @@ create_figs = True
 if create_figs:
     # single tree
     if select == 1:
-        score_mat_reg1 = check_rf_grow(650, 10000, n_draws = 20, ntree = 1,
-                                       depth_range = np.array([5,6]))
+        score_mat_reg1 = check_rf_grow(650, 10000, n_draws = 20, ntree = 1)
         reg_vis1, data_vis = cv_vis(score_mat_reg1[1:,:], np.arange(2,50))
 
         data_vis.to_csv("images/tree1_reg.csv")
