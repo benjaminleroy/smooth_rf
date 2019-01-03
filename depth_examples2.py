@@ -16,6 +16,7 @@ import smooth_level as smooth_rf
 # reproducing example on page 114 (Microsoft)
 
 np.random.seed(16)
+select = 1
 
 # check overfitting potential
 
@@ -180,33 +181,37 @@ def cv_vis(cv_mat, idx_range=None):
 create_figs = True
 if create_figs:
     # single tree
-    score_mat_reg1 = check_rf_grow(650, 10000, n_draws = 20, ntree = 1,
-                                   depth_range = np.array([5,6]))
-    reg_vis1, data_vis = cv_vis(score_mat_reg1[1:,:], np.arange(2,50))
+    if select == 1:
+        score_mat_reg1 = check_rf_grow(650, 10000, n_draws = 20, ntree = 1,
+                                       depth_range = np.array([5,6]))
+        reg_vis1, data_vis = cv_vis(score_mat_reg1[1:,:], np.arange(2,50))
 
-    data_vis.to_csv("images/tree1_reg.csv")
+        data_vis.to_csv("images/tree1_reg.csv")
 
-    save_as_pdf_pages([reg_vis1 + labs(title = "1 tree, reg") +\
-                       theme(figure_size = (8,6))],
-                      filename = "images/tree1_reg.pdf")
+        save_as_pdf_pages([reg_vis1 + labs(title = "1 tree, reg") +\
+                           theme(figure_size = (8,6))],
+                          filename = "images/tree1_reg.pdf")
+
 
 
     # 10 trees
-    score_mat_reg = check_rf_grow(650, 10000, n_draws = 20, ntree = 10)
-    reg_vis10, data_vis10 = cv_vis(score_mat_reg[1:,:], np.arange(2,50))
+    if select == 10:
+        score_mat_reg = check_rf_grow(650, 10000, n_draws = 20, ntree = 10)
+        reg_vis10, data_vis10 = cv_vis(score_mat_reg[1:,:], np.arange(2,50))
 
-    data_vis10.to_csv("images/tree10_reg.csv")
+        data_vis10.to_csv("images/tree10_reg.csv")
 
-    save_as_pdf_pages([reg_vis10 + labs(title = "10 tree, reg") + theme(figure_size = (8,6))],
-                    filename = "images/tree10_reg.pdf")
+        save_as_pdf_pages([reg_vis10 + labs(title = "10 tree, reg") + theme(figure_size = (8,6))],
+                        filename = "images/tree10_reg.pdf")
 
     # 300 trees
-    score_mat_reg300 = check_rf_grow(650, 10000, n_draws = 20, ntree = 300)
-    reg_vis300, data_vis300 = cv_vis(score_mat_reg300[1:,:], np.arange(2,50))
+    if select == 300:
+        score_mat_reg300 = check_rf_grow(650, 10000, n_draws = 20, ntree = 300)
+        reg_vis300, data_vis300 = cv_vis(score_mat_reg300[1:,:], np.arange(2,50))
 
-    data_vis300.to_csv("images/tree10_reg.csv")
+        data_vis300.to_csv("images/tree10_reg.csv")
 
-    save_as_pdf_pages([reg_vis300 + labs(title = "300 tree, reg") + theme(figure_size = (8,6))],
-                    filename = "images/tree300_reg.pdf")
+        save_as_pdf_pages([reg_vis300 + labs(title = "300 tree, reg") + theme(figure_size = (8,6))],
+                        filename = "images/tree300_reg.pdf")
 
 
