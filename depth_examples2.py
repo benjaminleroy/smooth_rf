@@ -20,10 +20,10 @@ select = 1
 
 # check overfitting potential
 
+
 def check_rf_grow(n_data, n_large, n_draws,
                reg_or_class="reg", depth_range=np.arange(1,50),
-               verbose = True, random_state=None,
-               ntree=1):
+               verbose = True, ntree=1):
     model_type = None
     if reg_or_class == "reg":
         model_type = sklearn.ensemble.RandomForestRegressor
@@ -56,8 +56,8 @@ def check_rf_grow(n_data, n_large, n_draws,
             model = model_type(max_depth=max_depth,n_estimators=ntree)
             model_fit = model.fit(data, y)
 
-            # smooth equal weight
-            smooth_ew_r_c, _, _ = smooth_base.smooth(
+            smooth equal weight
+            smooth_ew_r_c, smooth_ew_r_c_last ,_, _ = smooth_base.smooth(
                                 model_fit,
                                 X_trained = data,
                                 y_trained = y.ravel(),
@@ -66,7 +66,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 subgrad_max_num = 10000,
                                 subgrad_t_fix = 1,
                                 verbose = False)
-            smooth_ew_r_nc, _, _ = smooth_base.smooth(
+            smooth_ew_r_nc, smooth_ew_r_nc_last, _, _ = smooth_base.smooth(
                                 model_fit,
                                 X_trained = data,
                                 y_trained = y.ravel(),
@@ -75,7 +75,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 subgrad_max_num = 10000,
                                 subgrad_t_fix = 1,
                                 verbose = False)
-            smooth_ew_ob_c, _, _ = smooth_base.smooth(
+            smooth_ew_ob_c, smooth_ew_ob_c_last, _, _ = smooth_base.smooth(
                                 model_fit,
                                 X_trained = data,
                                 y_trained = y.ravel(),
@@ -84,7 +84,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 subgrad_max_num = 10000,
                                 subgrad_t_fix = 1,
                                 verbose = False)
-            smooth_ew_ob_nc, _, _ = smooth_base.smooth(
+            smooth_ew_ob_nc, smooth_ew_ob_nc_last, _, _ = smooth_base.smooth(
                                 model_fit,
                                 X_trained = data,
                                 y_trained = y.ravel(),
@@ -130,6 +130,8 @@ def check_rf_grow(n_data, n_large, n_draws,
             all_models = [model_fit,
                           smooth_ew_r_c, smooth_ew_r_nc,
                           smooth_ew_ob_c, smooth_ew_ob_nc,
+                          smooth_ew_r_c_last, smooth_ew_r_nc_last,
+                          smooth_ew_ob_c_last, smooth_ew_ob_nc_last,
                           smooth_lw_r_c, smooth_lw_r_nc,
                           smooth_lw_ob_c, smooth_lw_ob_nc]
 

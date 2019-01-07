@@ -521,8 +521,10 @@ def smooth(random_forest, X_trained=None, y_trained=None,
             n_obs_trained = X_trained.shape[0]
 
     inner_rf = copy.deepcopy(random_forest)
+    inner_rf2 = copy.deepcopy(random_forest)
 
     forest = inner_rf.estimators_
+    forest2 = inner_rf2.estimators_
 
     _, max_depth = calc_depth_for_forest(random_forest,verbose=False)
     max_depth = np.int(max_depth)
@@ -604,6 +606,8 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     # update random forest object (correct estimates from new lambda)
     #---
     y_leaf_new_all = (Gamma @ lamb) / (eta @ lamb)
+    y_leaf_new_all2 = (Gamma @ lamb_last) / (eta @ lamb_last)
+
 
     start_idx = 0
     for t in forest:
@@ -618,7 +622,20 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
     inner_rf.lamb = lamb
 
-    return inner_rf, lamb_last, c
+    start_idx2 = 0
+    for t in forest2:
+        tree = t.tree_
+        num_leaf = np.sum(tree.children_left == -1)
+
+
+        tree.value[tree.children_left == -1,:,:] = \
+            y_leaf_new_all[start_idx:(start_idx2 + num_leaf)].reshape((-1,1,1))
+
+        start_idx += num_leaf
+
+    inner_rf2.lamb = lamb_last
+
+    return inner_rf, inner_rf2, lamb_last, c
 
 def subgrad_descent(y_leaf, weights_leaf,
                     Gamma, eta, tree_idx_vec,

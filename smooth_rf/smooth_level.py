@@ -952,15 +952,23 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
     C = np.hstack((1 * np.ones((max_depth + 1,1)),
                    1 * np.identity(max_depth + 1))) # (n, m)
     b = np.array([1] + [0]*(max_depth + 1)) #(m)
-    #ipdb.set_trace()
+    #pdb.set_trace()
 
     # COMMENT: FOR ERROR: Gamma can have linearly dependent columns...
     # how to think about (pinv?) - should have learned this implimentation
-    opt = quadprog.solve_qp(G = G.astype(np.float),
-                            a = a.astype(np.float),
-                            C = C.astype(np.float),
-                            b = b.astype(np.float),
-                            meq = 1)
+    try:
+        opt = quadprog.solve_qp(G = G.astype(np.float),
+                                a = a.astype(np.float),
+                                C = C.astype(np.float),
+                                b = b.astype(np.float),
+                                meq = 1)
+    except ValueError:
+        G2 = G + np.diag(np.ones(G.shape[0]) * np.finfo(float).eps)
+        opt = quadprog.solve_qp(G = G2.astype(np.float),
+                                a = a.astype(np.float),
+                                C = C.astype(np.float),
+                                b = b.astype(np.float),
+                                meq = 1)
 
     lamb = opt[0]
 
