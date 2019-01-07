@@ -629,7 +629,7 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
 
         tree.value[tree.children_left == -1,:,:] = \
-            y_leaf_new_all[start_idx:(start_idx2 + num_leaf)].reshape((-1,1,1))
+            y_leaf_new_all[start_idx2:(start_idx2 + num_leaf)].reshape((-1,1,1))
 
         start_idx += num_leaf
 
