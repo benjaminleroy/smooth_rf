@@ -50,8 +50,10 @@ def check_rf_grow(n_data, n_large, n_draws,
         for j in np.arange(n_draws):
             # data generation
             data, y = smooth_base.generate_data(large_n=n_data)
+            y = y + 100
             # test
             data_test, y_test = smooth_base.generate_data(large_n=n_large)
+            y_test = y_test + 100
 
             model = model_type(max_depth=max_depth,n_estimators=ntree)
             model_fit = model.fit(data, y)

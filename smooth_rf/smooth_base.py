@@ -606,8 +606,13 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     # update random forest object (correct estimates from new lambda)
     #---
     y_leaf_new_all = (Gamma @ lamb) / (eta @ lamb)
-    y_leaf_new_all2 = (Gamma @ lamb_last) / (eta @ lamb_last)
 
+    # to avoid divide by 0 errors (this may be a problem relative to the
+    #   observed values)
+    eta_fill2 = (eta @ lamb_last)
+    eta_fill2[eta_fill2 == 0] = 1
+    y_leaf_new_all2 = (Gamma @ lamb_last) / eta_fill2
+    y_leaf_new_all2[(eta @ lamb_last) == 0] = 0
 
     start_idx = 0
     for t in forest:
