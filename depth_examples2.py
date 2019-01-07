@@ -56,7 +56,7 @@ def check_rf_grow(n_data, n_large, n_draws,
             model = model_type(max_depth=max_depth,n_estimators=ntree)
             model_fit = model.fit(data, y)
 
-            smooth equal weight
+            # smooth equal weight
             smooth_ew_r_c, smooth_ew_r_c_last ,_, _ = smooth_base.smooth(
                                 model_fit,
                                 X_trained = data,
