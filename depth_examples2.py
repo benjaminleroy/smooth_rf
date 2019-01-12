@@ -44,7 +44,7 @@ def check_rf_grow(n_data, n_large, n_draws,
         bar = progressbar.ProgressBar()
         depth_iter = bar(depth_iter)
 
-    score_mat = np.zeros((5, n_depth, n_draws))
+    score_mat = np.zeros((9, n_depth, n_draws))
 
     for i, max_depth in depth_iter:
         for j in np.arange(n_draws):
