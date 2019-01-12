@@ -49,14 +49,14 @@ def check_rf_grow(n_data, n_large, n_draws,
     for i, max_depth in depth_iter:
         for j in np.arange(n_draws):
             # data generation
-            ## data, y = smooth_base.generate_data(large_n=n_data)
-            data, y, _ = smooth_base.generate_data_knn(n=n_data,
-                                                       p=np.array([.3,.7]))
+            data, y = smooth_base.generate_data(large_n=n_data)
+            ## data, y, _ = smooth_base.generate_data_knn(n=n_data,
+            ##                                           p=np.array([.3,.7]))
             y = y + 100
             # test
-            ##data_test, y_test = smooth_base.generate_data(large_n=n_large)
-            data_test, y_test, _ = smooth_base.generate_data_knn(n=n_large,
-                                                        p=np.array([.3,.7]))
+            data_test, y_test = smooth_base.generate_data(large_n=n_large)
+            ##data_test, y_test, _ = smooth_base.generate_data_knn(n=n_large,
+            ##                                            p=np.array([.3,.7]))
 
             y_test = y_test + 100
 
@@ -201,11 +201,11 @@ if create_figs:
                                        depth_range = np.arange(2,50,2))
         reg_vis1, data_vis = cv_vis(score_mat_reg1, np.arange(2,50,2))
 
-        data_vis.to_csv("images/tree1_reg.csv")
+        data_vis.to_csv("images/tree1_reg_all_microsoft.csv")
 
         save_as_pdf_pages([reg_vis1 + labs(title = "1 tree, reg") +\
                            theme(figure_size = (8,6))],
-                          filename = "images/tree1_reg_all.pdf")
+                          filename = "images/tree1_reg_all_microsoft.pdf")
 
 
 
@@ -215,11 +215,11 @@ if create_figs:
                                       depth_range = np.arange(2,50,2))
         reg_vis10, data_vis10 = cv_vis(score_mat_reg, np.arange(2,50,2))
 
-        data_vis10.to_csv("images/tree10_reg.csv")
+        data_vis10.to_csv("images/tree10_reg_all_microsoft.csv")
 
         save_as_pdf_pages([reg_vis10 + labs(title = "10 tree, reg") +\
                            theme(figure_size = (8,6))],
-                         filename = "images/tree10_reg_all.pdf")
+                         filename = "images/tree10_reg_all_microsoft.pdf")
 
     # 300 trees
     if select == 300:
@@ -227,10 +227,10 @@ if create_figs:
                                          depth_range = np.arange(2,50,2))
         reg_vis300, data_vis300 = cv_vis(score_mat_reg300, np.arange(2,50,2))
 
-        data_vis300.to_csv("images/tree300_reg.csv")
+        data_vis300.to_csv("images/tree300_reg_all_microsoft.csv")
 
         save_as_pdf_pages([reg_vis300 + labs(title = "300 tree, reg") +\
                            theme(figure_size = (8,6))],
-                         filename = "images/tree300_reg_all.pdf")
+                         filename = "images/tree300_reg_all_microsoft.pdf")
 
 
