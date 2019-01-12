@@ -452,7 +452,8 @@ def smooth(random_forest, X_trained=None, y_trained=None,
                no_constraint=False, sanity_check=False,
                resample_tune=False,
                subgrad_max_num=1000, subgrad_t_fix=1,
-               all_trees=False):
+               all_trees=False,
+               initial_lamb_seed=None):
     """
     creates a smooth random forest (1 lambda set across all trees)
 
@@ -490,7 +491,9 @@ def smooth(random_forest, X_trained=None, y_trained=None,
         value for fixed t step size for gradient descent
     all_trees : bool
         logic to use all trees (and therefore do full gradient descent)
-
+    initial_lamb_seed : scalar
+        initial value for seed (default is None) to randomly select the
+        starting point of lambda
     Returns:
     --------
     an updated RandomForestRegressor object with values for each node altered
@@ -594,8 +597,15 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     #---
     # Optimization
     #---
-    lamb = np.zeros(Gamma.shape[1]) #sanity check
-    lamb[0] = 1
+    if initial_lamb_seed is None:
+        lamb = np.zeros(Gamma.shape[1]) #sanity check
+        lamb[0] = 1
+    else:
+        np.random.seed(initial_lamb)
+        lamb = np.random.uniform(size = Gamma.shape[1])
+        lamb = lamb / lamb.sum()
+
+
 
     if all_trees:
         n = t_idx_vec.shape
