@@ -601,7 +601,7 @@ def smooth(random_forest, X_trained=None, y_trained=None,
         lamb = np.zeros(Gamma.shape[1]) #sanity check
         lamb[0] = 1
     else:
-        np.random.seed(initial_lamb)
+        np.random.seed(initial_lamb_seed)
         lamb = np.random.uniform(size = Gamma.shape[1])
         lamb = lamb / lamb.sum()
 
