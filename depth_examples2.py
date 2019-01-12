@@ -64,7 +64,7 @@ def check_rf_grow(n_data, n_large, n_draws,
             model_fit = model.fit(data, y)
 
             # smooth equal weight
-            smooth_ew_r_c, smooth_ew_r_c_last ,_, _ = smooth_base.smooth(
+            smooth_ew_r_c, smooth_ew_r_c_last ,_, c1 = smooth_base.smooth(
                                 model_fit,
                                 X_trained = data,
                                 y_trained = y.ravel(),
@@ -74,7 +74,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 subgrad_t_fix = 1,
                                 verbose = False,
                                 all_trees = True)
-            smooth_ew_r_nc, smooth_ew_r_nc_last, _, _ = smooth_base.smooth(
+            smooth_ew_r_nc, smooth_ew_r_nc_last, _, c2 = smooth_base.smooth(
                                 model_fit,
                                 X_trained = data,
                                 y_trained = y.ravel(),
@@ -84,7 +84,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 subgrad_t_fix = 1,
                                 verbose = False,
                                 all_trees = True)
-            smooth_ew_ob_c, smooth_ew_ob_c_last, _, _ = smooth_base.smooth(
+            smooth_ew_ob_c, smooth_ew_ob_c_last, _, c3 = smooth_base.smooth(
                                 model_fit,
                                 X_trained = data,
                                 y_trained = y.ravel(),
@@ -94,7 +94,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 subgrad_t_fix = 1,
                                 verbose = False,
                                 all_trees = True)
-            smooth_ew_ob_nc, smooth_ew_ob_nc_last, _, _ = smooth_base.smooth(
+            smooth_ew_ob_nc, smooth_ew_ob_nc_last, _, c4 = smooth_base.smooth(
                                 model_fit,
                                 X_trained = data,
                                 y_trained = y.ravel(),
@@ -152,7 +152,7 @@ def check_rf_grow(n_data, n_large, n_draws,
 
                 score_mat[m_idx, i,j] = scoring(y_test,yhat_test)
 
-    return score_mat
+    return score_mat, [c1, c2, c3, c4]
 
 
 def cv_vis(cv_mat, idx_range=None):
@@ -197,7 +197,7 @@ create_figs = True
 if create_figs:
     # single tree
     if select == 1:
-        score_mat_reg1 = check_rf_grow(650, 10000, n_draws = 20, ntree = 1,
+        score_mat_reg1, c = check_rf_grow(650, 10000, n_draws = 20, ntree = 1,
                                        depth_range = np.arange(2,50,2))
         reg_vis1, data_vis = cv_vis(score_mat_reg1, np.arange(2,50,2))
 
@@ -211,7 +211,7 @@ if create_figs:
 
     # 10 trees
     if select == 10:
-        score_mat_reg = check_rf_grow(650, 10000, n_draws = 20, ntree = 10,
+        score_mat_reg, c = check_rf_grow(650, 10000, n_draws = 20, ntree = 10,
                                       depth_range = np.arange(2,50,2))
         reg_vis10, data_vis10 = cv_vis(score_mat_reg, np.arange(2,50,2))
 
@@ -223,7 +223,7 @@ if create_figs:
 
     # 300 trees
     if select == 300:
-        score_mat_reg300 = check_rf_grow(650, 10000, n_draws = 20, ntree = 300,
+        score_mat_reg300, c = check_rf_grow(650, 10000, n_draws = 20, ntree = 300,
                                          depth_range = np.arange(2,50,2))
         reg_vis300, data_vis300 = cv_vis(score_mat_reg300, np.arange(2,50,2))
 
