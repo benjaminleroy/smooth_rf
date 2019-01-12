@@ -44,7 +44,7 @@ def check_rf_grow(n_data, n_large, n_draws,
         bar = progressbar.ProgressBar()
         depth_iter = bar(depth_iter)
 
-    score_mat = np.zeros((13, n_depth, n_draws))
+    score_mat = np.zeros((19, n_depth, n_draws))
 
     for i, max_depth in depth_iter:
         for j in np.arange(n_draws):
@@ -133,38 +133,56 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 all_trees = True)
 
 
-            # # smooth level weight
-            # smooth_lw_r_c = smooth_rf.smooth_all(
-            #                     model_fit,
-            #                     X_trained = data,
-            #                     y_trained = y.ravel(),
-            #                     resample_tune = True,
-            #                     no_constraint = False,
-            #                     verbose = False)
+            # smooth level weight
+            smooth_lw_r_c = smooth_rf.smooth_all(
+                                model_fit,
+                                X_trained = data,
+                                y_trained = y.ravel(),
+                                resample_tune = True,
+                                no_constraint = False,
+                                verbose = False)
 
-            # smooth_lw_r_nc = smooth_rf.smooth_all(
-            #                     model_fit,
-            #                     X_trained = data,
-            #                     y_trained = y.ravel(),
-            #                     resample_tune = True,
-            #                     no_constraint = True,
-            #                     verbose = False)
+            smooth_lw_r_nc = smooth_rf.smooth_all(
+                                model_fit,
+                                X_trained = data,
+                                y_trained = y.ravel(),
+                                resample_tune = True,
+                                no_constraint = True,
+                                verbose = False)
 
-            # smooth_lw_ob_c = smooth_rf.smooth_all(
-            #                     model_fit,
-            #                     X_trained = data,
-            #                     y_trained = y.ravel(),
-            #                     resample_tune = False,
-            #                     no_constraint = False,
-            #                     verbose = False)
+            smooth_lw_ob_c = smooth_rf.smooth_all(
+                                model_fit,
+                                X_trained = data,
+                                y_trained = y.ravel(),
+                                resample_tune = False,
+                                no_constraint = False,
+                                verbose = False)
 
-            # smooth_lw_ob_nc = smooth_rf.smooth_all(
-            #                     model_fit,
-            #                     X_trained = data,
-            #                     y_trained = y.ravel(),
-            #                     resample_tune = False,
-            #                     no_constraint = True,
-            #                     verbose = False)
+            smooth_lw_ob_nc = smooth_rf.smooth_all(
+                                model_fit,
+                                X_trained = data,
+                                y_trained = y.ravel(),
+                                resample_tune = False,
+                                no_constraint = True,
+                                verbose = False)
+
+            smooth_lw_oracle_c = smooth_rf.smooth_all(
+                                model_fit,
+                                X_trained = data,
+                                y_trained = y.ravel(),
+                                X_tune = data_tune,
+                                y_tune = y_tune.ravel(),
+                                no_constraint = False,
+                                verbose = False)
+
+            smooth_lw_oracle_nc = smooth_rf.smooth_all(
+                                model_fit,
+                                X_trained = data,
+                                y_trained = y.ravel(),
+                                X_tune = data_tune,
+                                y_tune = y_tune.ravel(),
+                                no_constraint = True,
+                                verbose = False)
 
             all_models = [model_fit,
                           smooth_ew_r_c, smooth_ew_r_nc,
@@ -172,9 +190,10 @@ def check_rf_grow(n_data, n_large, n_draws,
                           smooth_ew_r_c_last, smooth_ew_r_nc_last,
                           smooth_ew_ob_c_last, smooth_ew_ob_nc_last,
                           smooth_ew_oracle_nc, smooth_ew_oracle_nc_last,
-                          smooth_ew_oracle_c, smooth_ew_oracle_c_last# smooth_lw_r_c, smooth_lw_r_nc,
-                          # smooth_lw_ob_c, smooth_lw_ob_nc
-                          ]
+                          smooth_ew_oracle_c, smooth_ew_oracle_c_last,
+                          smooth_lw_r_c, smooth_lw_r_nc,
+                          smooth_lw_ob_c, smooth_lw_ob_nc
+                          smooth_lw_oracle_c,smooth_lw_oracle_nc]
 
             for m_idx, s_model in enumerate(all_models):
                 yhat_test = s_model.predict(data_test)
