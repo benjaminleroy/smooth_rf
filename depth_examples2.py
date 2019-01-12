@@ -16,7 +16,7 @@ import smooth_level as smooth_rf
 # reproducing example on page 114 (Microsoft)
 
 np.random.seed(16)
-select = 1
+select = 300
 
 # check overfitting potential
 
@@ -44,15 +44,20 @@ def check_rf_grow(n_data, n_large, n_draws,
         bar = progressbar.ProgressBar()
         depth_iter = bar(depth_iter)
 
-    score_mat = np.zeros((9, n_depth, n_draws))
+    score_mat = np.zeros((5, n_depth, n_draws))
 
     for i, max_depth in depth_iter:
         for j in np.arange(n_draws):
             # data generation
-            data, y = smooth_base.generate_data(large_n=n_data)
+            ## data, y = smooth_base.generate_data(large_n=n_data)
+            data, y, _ = smooth_base.generate_data_knn(n=n_data,
+                                                       p=np.array([.3,.7]))
             y = y + 100
             # test
-            data_test, y_test = smooth_base.generate_data(large_n=n_large)
+            ##data_test, y_test = smooth_base.generate_data(large_n=n_large)
+            data_test, y_test, _ = smooth_base.generate_data_knn(n=n_large,
+                                                        p=np.array([.3,.7]))
+
             y_test = y_test + 100
 
             model = model_type(max_depth=max_depth,n_estimators=ntree)
@@ -67,7 +72,8 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 no_constraint = False,
                                 subgrad_max_num = 10000,
                                 subgrad_t_fix = 1,
-                                verbose = False)
+                                verbose = False,
+                                all_trees = True)
             smooth_ew_r_nc, smooth_ew_r_nc_last, _, _ = smooth_base.smooth(
                                 model_fit,
                                 X_trained = data,
@@ -76,7 +82,8 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 no_constraint = True,
                                 subgrad_max_num = 10000,
                                 subgrad_t_fix = 1,
-                                verbose = False)
+                                verbose = False,
+                                all_trees = True)
             smooth_ew_ob_c, smooth_ew_ob_c_last, _, _ = smooth_base.smooth(
                                 model_fit,
                                 X_trained = data,
@@ -85,7 +92,8 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 no_constraint = False,
                                 subgrad_max_num = 10000,
                                 subgrad_t_fix = 1,
-                                verbose = False)
+                                verbose = False,
+                                all_trees = True)
             smooth_ew_ob_nc, smooth_ew_ob_nc_last, _, _ = smooth_base.smooth(
                                 model_fit,
                                 X_trained = data,
@@ -94,9 +102,10 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 no_constraint = False,
                                 subgrad_max_num = 10000,
                                 subgrad_t_fix = 1,
-                                verbose = False)
+                                verbose = False,
+                                all_trees = True)
 
-            # smooth level weight
+            # # smooth level weight
             # smooth_lw_r_c = smooth_rf.smooth_all(
             #                     model_fit,
             #                     X_trained = data,
@@ -196,7 +205,7 @@ if create_figs:
 
         save_as_pdf_pages([reg_vis1 + labs(title = "1 tree, reg") +\
                            theme(figure_size = (8,6))],
-                          filename = "images/tree1_reg.pdf")
+                          filename = "images/tree1_reg_all.pdf")
 
 
 
@@ -210,7 +219,7 @@ if create_figs:
 
         save_as_pdf_pages([reg_vis10 + labs(title = "10 tree, reg") +\
                            theme(figure_size = (8,6))],
-                         filename = "images/tree10_reg.pdf")
+                         filename = "images/tree10_reg_all.pdf")
 
     # 300 trees
     if select == 300:
@@ -218,10 +227,10 @@ if create_figs:
                                          depth_range = np.arange(2,50,2))
         reg_vis300, data_vis300 = cv_vis(score_mat_reg300, np.arange(2,50,2))
 
-        data_vis300.to_csv("images/tree10_reg.csv")
+        data_vis300.to_csv("images/tree300_reg.csv")
 
         save_as_pdf_pages([reg_vis300 + labs(title = "300 tree, reg") +\
                            theme(figure_size = (8,6))],
-                         filename = "images/tree300_reg.pdf")
+                         filename = "images/tree300_reg_all.pdf")
 
 

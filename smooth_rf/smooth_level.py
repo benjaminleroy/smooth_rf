@@ -956,19 +956,19 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
 
     # COMMENT: FOR ERROR: Gamma can have linearly dependent columns...
     # how to think about (pinv?) - should have learned this implimentation
-    try:
-        opt = quadprog.solve_qp(G = G.astype(np.float),
-                                a = a.astype(np.float),
-                                C = C.astype(np.float),
-                                b = b.astype(np.float),
-                                meq = 1)
-    except ValueError:
-        G2 = G + np.diag(np.ones(G.shape[0]) * np.finfo(float).eps * 1000)
-        opt = quadprog.solve_qp(G = G2.astype(np.float),
-                                a = a.astype(np.float),
-                                C = C.astype(np.float),
-                                b = b.astype(np.float),
-                                meq = 1)
+
+    reattempt = True
+    while reattempt:
+        reattempt = False
+        try:
+            opt = quadprog.solve_qp(G = G.astype(np.float),
+                                    a = a.astype(np.float),
+                                    C = C.astype(np.float),
+                                    b = b.astype(np.float),
+                                    meq = 1)
+        except:
+            G = G + np.diag(np.ones(G.shape[0]) * np.finfo(float).eps * 1000)
+            reattempt = True
 
     lamb = opt[0]
 
