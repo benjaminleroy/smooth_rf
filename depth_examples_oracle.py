@@ -192,7 +192,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                           smooth_ew_oracle_nc, smooth_ew_oracle_nc_last,
                           smooth_ew_oracle_c, smooth_ew_oracle_c_last,
                           smooth_lw_r_c, smooth_lw_r_nc,
-                          smooth_lw_ob_c, smooth_lw_ob_nc
+                          smooth_lw_ob_c, smooth_lw_ob_nc,
                           smooth_lw_oracle_c,smooth_lw_oracle_nc]
 
             for m_idx, s_model in enumerate(all_models):
