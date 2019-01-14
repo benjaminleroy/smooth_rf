@@ -20,7 +20,7 @@ import pdb
 # sys.path.append("../../filament_and_rfdepth/code/functions/")
 # import projected_grad_lamb_update as projgrad
 import smooth_base
-from smooth_base import depth_per_node
+from smooth_base import depth_per_node, create_Gamma_eta_forest
 
 ##################################
 # Base Tree and Forest Structure #
@@ -574,6 +574,7 @@ def _decision_list_nodes(children_right, children_left, idx=0, elders=list()):
         return [c_left[0] + c_right[0],
                 c_left[1] + c_right[1]]
 
+
 def test_decision_list_nodes():
     """
     test for _decision_list_nodes
@@ -782,8 +783,10 @@ def smooth(random_forest, X_trained, y_trained, X_tune=None, y_tune=None):
 
 
 
-def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,verbose=True,
-               no_constraint=False, sanity_check=False, resample_tune=False):
+def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
+               verbose=True,
+               no_constraint=False, sanity_check=False, resample_tune=False,
+               parents_all=False):
     """
     creates a smooth random forest (1 lambda set across all trees)
 
@@ -807,7 +810,9 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
         logic to do full process but keep same weights
     resample_tune: bool
         logic to tune / optimize with another bootstrap same from X
-
+    parents_all : bool
+        logic to instead include all observations with parent of distance k
+        away
 
     Returns:
     --------
@@ -842,7 +847,7 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
     _, max_depth = smooth_base.calc_depth_for_forest(random_forest,verbose=False)
     max_depth = np.int(max_depth)
 
-    Gamma_all = np.zeros((0,max_depth + 1))
+    # Gamma_all = np.zeros((0,max_depth + 1))
     obs_y_leaf_all = np.zeros(0)
     obs_weight_non_zero_all = np.zeros(0)
 
@@ -856,39 +861,39 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
         tree = t.tree_
         num_leaf = np.sum(tree.children_left == -1)
 
-        # node associated
-        node_V = decision_path_nodes(tree.children_right, tree.children_left)
-        node_dd = depth_dist(node_V @ node_V.T)
-        node_dd_expand = categorical_depth_expand(node_dd)
+        # # node associated
+        # node_V = decision_path_nodes(tree.children_right, tree.children_left)
+        # node_dd = depth_dist(node_V @ node_V.T)
+        # node_dd_expand = categorical_depth_expand(node_dd)
 
-        num_lamb = node_dd_expand.shape[0]
-        # hmmm - to grab the OOB we could do:
-        # _generate_sample_indices
-        # from https://github.com/scikit-learn/scikit-learn/blob/bac89c253b35a8f1a3827389fbee0f5bebcbc985/sklearn/ensemble/forest.py#L78
-        # just need to grab the tree's random state (t.random_state)
+        # num_lamb = node_dd_expand.shape[0]
+        # # hmmm - to grab the OOB we could do:
+        # # _generate_sample_indices
+        # # from https://github.com/scikit-learn/scikit-learn/blob/bac89c253b35a8f1a3827389fbee0f5bebcbc985/sklearn/ensemble/forest.py#L78
+        # # just need to grab the tree's random state (t.random_state)
 
-        # trained "in bag observations"
+        # # trained "in bag observations"
         random_state = t.random_state
         sample_indices = \
             sklearn.ensemble.forest._generate_sample_indices(random_state,
                                                              n_obs_trained)
-        train_V = t.decision_path(X_trained[sample_indices,:])
-        train_V_leaf = train_V[:,tree.children_left == -1]
+        # train_V = t.decision_path(X_trained[sample_indices,:])
+        # train_V_leaf = train_V[:,tree.children_left == -1]
 
-        train_count = train_V_leaf.sum(axis = 0) # by column
-        train_weight = train_count / np.sum(train_count)
-        train_value_sum = (train_V_leaf.T @ y_trained[sample_indices])
+        # train_count = train_V_leaf.sum(axis = 0) # by column
+        # train_weight = train_count / np.sum(train_count)
+        # train_value_sum = (train_V_leaf.T @ y_trained[sample_indices])
 
 
-        assert np.sum(train_count) == sample_indices.shape[0], \
-            "incorrect shape match"
+        # assert np.sum(train_count) == sample_indices.shape[0], \
+        #     "incorrect shape match"
 
-        np.testing.assert_allclose(
-            np.array(tree.value[tree.children_left == -1,:,:]).ravel(),
-            np.array(train_value_sum / train_count).ravel(),
-            err_msg = "weirdly prediction value is expected to be...")
+        # np.testing.assert_allclose(
+        #     np.array(tree.value[tree.children_left == -1,:,:]).ravel(),
+        #     np.array(train_value_sum / train_count).ravel(),
+        #     err_msg = "weirdly prediction value is expected to be...")
 
-        # observed information
+        # # observed information
         if oob_logic:
             oob_indices = \
                 sklearn.ensemble.forest._generate_unsampled_indices(
@@ -923,25 +928,34 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
         #---
         obs_y_leaf = (obs_V_leaf.T @ y_tune) / obs_count_div
 
-        Gamma_num = node_dd_expand @ train_value_sum
-        Gamma_deno = node_dd_expand @ np.array(train_count).ravel()
+        # Gamma_num = node_dd_expand @ train_value_sum
+        # Gamma_deno = node_dd_expand @ np.array(train_count).ravel()
 
-        Gamma_deno_div = Gamma_deno.copy()
-        Gamma_deno_div[Gamma_deno_div == 0] = 1
+        # Gamma_deno_div = Gamma_deno.copy()
+        # Gamma_deno_div[Gamma_deno_div == 0] = 1
 
-        Gamma = (Gamma_num / Gamma_deno_div).T
+        # Gamma = (Gamma_num / Gamma_deno_div).T
 
-        if Gamma.shape[1] != (max_depth + 1):
-            Gamma_structure = np.zeros((Gamma.shape[0], max_depth + 1))
-            Gamma_structure[:,:Gamma.shape[1]] = Gamma
-        else:
-            Gamma_structure = Gamma
+        # if Gamma.shape[1] != (max_depth + 1):
+        #     Gamma_structure = np.zeros((Gamma.shape[0], max_depth + 1))
+        #     Gamma_structure[:,:Gamma.shape[1]] = Gamma
+        # else:
+        #     Gamma_structure = Gamma
 
-        Gamma_all = np.vstack((Gamma_all, Gamma_structure))
+        # Gamma_all = np.vstack((Gamma_all, Gamma_structure))
         obs_weight_non_zero_all = np.hstack((obs_weight_non_zero_all,
                                     np.array(obs_weight_non_zero).ravel()))
         obs_y_leaf_all = np.hstack((obs_y_leaf_all,
                                     np.array(obs_y_leaf).ravel()))
+
+    ga, et, _ = smooth_base.create_Gamma_eta_forest(inner_rf,
+                                                    verbose=verbose,
+                                                    parents_all=parents_all)
+    #pdb.set_trace()
+
+    et[et == 0] = eps
+
+    Gamma_all = ga/et
 
     # optimization:
     G = Gamma_all.T @ \
@@ -952,7 +966,6 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,ver
     C = np.hstack((1 * np.ones((max_depth + 1,1)),
                    1 * np.identity(max_depth + 1))) # (n, m)
     b = np.array([1] + [0]*(max_depth + 1)) #(m)
-    #pdb.set_trace()
 
     # COMMENT: FOR ERROR: Gamma can have linearly dependent columns...
     # how to think about (pinv?) - should have learned this implimentation

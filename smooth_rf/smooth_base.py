@@ -222,7 +222,8 @@ def create_distance_mat_leaves(tree = None, decision_mat_leaves = None):
     return (d - Q.T).T
 
 def create_Gamma_eta_tree(tree,
-                      dist_mat_leaves=None):
+                      dist_mat_leaves=None,
+                      parents_all=False):
     """
     creates the Gamma and eta matrices for a single tree, where these two
     matrices are defined:
@@ -249,6 +250,9 @@ def create_Gamma_eta_tree(tree,
         thought of as a semi-metric.
 
         This object is created if not provided.
+    parents_all : bool
+        logic to instead include all observations with parent of distance k
+        away
 
     Returns:
     --------
@@ -302,7 +306,10 @@ def create_Gamma_eta_tree(tree,
 
 
     for k_idx in np.arange(np.min(dist_mat_leaves), np.max(dist_mat_leaves)+1):
-        xx, yy = np.where(dist_mat_leaves == k_idx)
+        if parents_all:
+            xx, yy = np.where(dist_mat_leaves <= k_idx)
+        else:
+            xx, yy = np.where(dist_mat_leaves == k_idx)
 
         xx_all = np.concatenate((xx_all, xx))
         yy_all = np.concatenate((yy_all, yy))
@@ -323,7 +330,7 @@ def create_Gamma_eta_tree(tree,
 
     return Gamma, eta
 
-def create_Gamma_eta_forest(forest, verbose=False):
+def create_Gamma_eta_forest(forest, verbose=False, parents_all=False):
     """
     creates the Gamma and eta matrices for a forest (aka set of trees, where
     these two matrices are defined (per tree):
@@ -341,7 +348,9 @@ def create_Gamma_eta_forest(forest, verbose=False):
         grown forest with T total number of trees
     verbose : bool
         logic to show tree analysis process
-
+    parents_all : bool
+        logic to instead include all observations with parent of distance k
+        away
     Returns:
     --------
     Gamma_all : array (sum_{t=1}^T n_leaves(t), maximum depth of forest + 1)
@@ -368,7 +377,7 @@ def create_Gamma_eta_forest(forest, verbose=False):
         first_iter = bar(list(first_iter))
 
     for t_idx, tree in first_iter:
-        g, n = create_Gamma_eta_tree(tree)
+        g, n = create_Gamma_eta_tree(tree, parents_all=parents_all)
         tree_n_leaf = g.shape[0]
         if g.shape[1] != Gamma_all.shape[1]:
             diff = Gamma_all.shape[1] - g.shape[1]
@@ -453,7 +462,8 @@ def smooth(random_forest, X_trained=None, y_trained=None,
                resample_tune=False,
                subgrad_max_num=1000, subgrad_t_fix=1,
                all_trees=False,
-               initial_lamb_seed=None):
+               initial_lamb_seed=None,
+               parents_all=False):
     """
     creates a smooth random forest (1 lambda set across all trees)
 
@@ -494,6 +504,10 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     initial_lamb_seed : scalar
         initial value for seed (default is None) to randomly select the
         starting point of lambda
+    parents_all : bool
+        logic to instead include all observations with parent of distance k
+        away
+
     Returns:
     --------
     an updated RandomForestRegressor object with values for each node altered
@@ -538,7 +552,8 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
     # getting structure from built trees
     Gamma, eta, t_idx_vec = create_Gamma_eta_forest(random_forest,
-                                                    verbose=verbose)
+                                                    verbose=verbose,
+                                                    parents_all=parents_all)
 
     first_iter = forest
     if verbose:
