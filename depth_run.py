@@ -175,7 +175,7 @@ def check_rf_grow(n_data, n_large, n_draws,
         c_mat = None
     elif style == "element-based":
         score_mat = np.zeros((3, n_depth, n_draws))
-        c_mat = np.zeros((depth_range.shape[0],n_draws,max_iter))
+        c_mat = np.zeros((depth_range.shape[0],n_draws,max_iter + 1))
     else:
         NameError("style needs to be 1 of the 2 options")
 
@@ -326,47 +326,47 @@ def cost_vis(c_mat, depth_range=None):
 
 create_figs = True
 if create_figs:
-    if style == "level-base":
-        score_mat, c = check_rf_grow(
-               n_data=650,
-               n_large=10000,
-               n_draws=20,
-               reg_or_class="reg",
-               depth_range=np.arange(2,50,2),
-               verbose=True,
-               ntree=num_trees,
-               data_set = data_set,
-               tuning = tuning,
-               constrained = constrained,
-               style = style,
-               parents_all = parents_all,
-               batch = batch,
-               initial_lamb = initial_lamb,
-               max_iter = max_iter)
 
-        depth_vis, data_vis_depth = depth_error_vis(score_mat,
-                                             np.arange(2,50,2))
-        data_vis_depth.to_csv("images/data_vis_depth_"+\
-                                 data_set + "_" +\
-                                 "trees" + str(num_trees) + "_" +\
-                                 tuning + "_" +\
-                                 c_in + "_" +\
-                                 style + "_" +\
-                                 initial_lamb + "_" +\
-                                 batch + "_" +\
-                                 str(max_iter) + ".csv")
+    score_mat, c = check_rf_grow(
+           n_data=650,
+           n_large=10000,
+           n_draws=20,
+           reg_or_class="reg",
+           depth_range=np.arange(2,50,2),
+           verbose=True,
+           ntree=num_trees,
+           data_set = data_set,
+           tuning = tuning,
+           constrained = constrained,
+           style = style,
+           parents_all = parents_all,
+           batch = batch,
+           initial_lamb = initial_lamb,
+           max_iter = max_iter)
 
-        save_as_pdf_pages([depth_vis  +\
-                           theme(figure_size = (8,6))],
-                          filename = "images/depth_vis" +\
-                                 data_set + "_" +\
-                                 "trees" + str(num_trees) + "_" +\
-                                 tuning + "_" +\
-                                 c_in + "_" +\
-                                 style + "_" +\
-                                 initial_lamb + "_" +\
-                                 batch + "_" +\
-                                 str(max_iter) + ".pdf")
+    depth_vis, data_vis_depth = depth_error_vis(score_mat,
+                                         np.arange(2,50,2))
+    data_vis_depth.to_csv("images/data_vis_depth_"+\
+                             data_set + "_" +\
+                             "trees" + str(num_trees) + "_" +\
+                             tuning + "_" +\
+                             c_in + "_" +\
+                             style + "_" +\
+                             initial_lamb + "_" +\
+                             batch + "_" +\
+                             str(max_iter) + ".csv")
+
+    save_as_pdf_pages([depth_vis  +\
+                       theme(figure_size = (8,6))],
+                      filename = "images/depth_vis" +\
+                             data_set + "_" +\
+                             "trees" + str(num_trees) + "_" +\
+                             tuning + "_" +\
+                             c_in + "_" +\
+                             style + "_" +\
+                             initial_lamb + "_" +\
+                             batch + "_" +\
+                             str(max_iter) + ".pdf")
 
     if style == "element-based":
         cost_vis, data_vis_cost = cost_vis(c, np.arange(2,50,2))
