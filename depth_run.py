@@ -34,7 +34,7 @@ tuning = sys.argv[2]
 c = sys.argv[3]
 if c == "c":
     constrained = True
-else if c == "nc":
+elif c == "nc":
     constrained = False
 else:
     stop("c needs to be 1 of the 2 options")
@@ -42,7 +42,7 @@ else:
 s == sys.argv[4]
 if s == "lb":
     style = "level-base"
-else if s == "eb":
+elif s == "eb":
     style = "element-based"
 else:
     stop("s needs to be 1 of the 2 options")
@@ -51,7 +51,7 @@ else:
 d = sys.argv[5]
 if d == "l":
     parents_all = False
-else if d == "p":
+elif d == "p":
     parents_all = True
 else:
     stop("d needs to be 1 of 2 options")
@@ -60,7 +60,7 @@ if s == "eb":
     i = sys.argv[6]
     if i == "rf":
         initial_lamb = "rf-init"
-    else if i == "r":
+    elif i == "r":
         initial_lamb = "random-init"
     else:
         stop("i needs to be 1 of the 2 options")
@@ -68,7 +68,7 @@ if s == "eb":
     b = sys.argv[7]
     if b == "tree":
         batch = "single-tree"
-    else if b == "all":
+    elif b == "all":
         batch = "all-trees"
     else:
         stop("b needs to be 1 of 2 options")
@@ -146,7 +146,7 @@ def check_rf_grow(n_data, n_large, n_draws,
 
     if data_set == "microsoft":
         data_generator = smooth_base.generate_data
-    else if data_set == "knn":
+    elif data_set == "knn":
         data_generator = lambda large_n: smooth_base.generate_data_knn(
                                                      n=large_n,
                                                      p=np.array([.3,.7]))
@@ -160,12 +160,12 @@ def check_rf_grow(n_data, n_large, n_draws,
 
     if initial_lamb == "rf-init":
         initial_lamb_seed_f = lambda : None
-    else if initial_lamb == "random-init":
+    elif initial_lamb == "random-init":
         initial_lamb_seed_f = get_random_seed
 
     if batch == "single-tree":
         all_trees = False
-    else if batch == "all-trees":
+    elif batch == "all-trees":
         all_trees = True
     else:
         stop("batch option needs to be 1 of the 2 options")
@@ -175,7 +175,7 @@ def check_rf_grow(n_data, n_large, n_draws,
     if style == "level-base":
         score_mat = np.zeros((2, n_depth, n_draws))
         c_mat = None
-    else if style == "element-based":
+    elif style == "element-based":
         score_mat = np.zeros((3, n_depth, n_draws))
         c_mat = np.zeros((depth_range.shape[0],n_draws,max_iter))
     else:
@@ -225,7 +225,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                 yhat_test = smooth_rf.predict(data_test)
                 score_mat[1,i,j] = scoring(y_test,yhat_test)
 
-            else if style ==  "element-based":
+            elif style ==  "element-based":
 
                 smooth_rf_opt, smooth_rf_last ,_, c = smooth_base.smooth(
                                 model_fit,
