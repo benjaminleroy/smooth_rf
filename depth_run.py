@@ -11,8 +11,7 @@ import sys
 
 sys.path.append("smooth_rf/")
 import smooth_base
-import smooth_level as smooth_rf
-
+import smooth_level
 
 
 # input
@@ -31,21 +30,21 @@ num_trees = np.int(n)
 
 tuning = sys.argv[2]
 
-c = sys.argv[3]
-if c == "c":
+c_in = sys.argv[3]
+if c_in == "c":
     constrained = True
-elif c == "nc":
+elif c_in == "nc":
     constrained = False
 else:
-    stop("c needs to be 1 of the 2 options")
+    NameError("c_in needs to be 1 of the 2 options")
 
-s == sys.argv[4]
+s = sys.argv[4]
 if s == "lb":
     style = "level-base"
 elif s == "eb":
     style = "element-based"
 else:
-    stop("s needs to be 1 of the 2 options")
+    NameError("s needs to be 1 of the 2 options")
 
 
 d = sys.argv[5]
@@ -54,7 +53,7 @@ if d == "l":
 elif d == "p":
     parents_all = True
 else:
-    stop("d needs to be 1 of 2 options")
+    NameError("d needs to be 1 of 2 options")
 
 if s == "eb":
     i = sys.argv[6]
@@ -63,7 +62,7 @@ if s == "eb":
     elif i == "r":
         initial_lamb = "random-init"
     else:
-        stop("i needs to be 1 of the 2 options")
+        NameError("i needs to be 1 of the 2 options")
 
     b = sys.argv[7]
     if b == "tree":
@@ -71,7 +70,7 @@ if s == "eb":
     elif b == "all":
         batch = "all-trees"
     else:
-        stop("b needs to be 1 of 2 options")
+        NameError("b needs to be 1 of 2 options")
 
     m = sys.argv[8]
     max_iter = np.int(m)
@@ -79,7 +78,6 @@ else:
     initial_lamb = ""
     batch = ""
     max_iter = ""
-
 
 
 
@@ -151,7 +149,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                                                      n=large_n,
                                                      p=np.array([.3,.7]))
     else:
-        stop("data_set option needs to be 1 of the 2 options")
+        NameError("data_set option needs to be 1 of the 2 options")
 
     if tuning == "resample":
         resample_input = True
@@ -168,7 +166,7 @@ def check_rf_grow(n_data, n_large, n_draws,
     elif batch == "all-trees":
         all_trees = True
     else:
-        stop("batch option needs to be 1 of the 2 options")
+        NameError("batch option needs to be 1 of the 2 options")
 
 
     # storage devices
@@ -179,7 +177,7 @@ def check_rf_grow(n_data, n_large, n_draws,
         score_mat = np.zeros((3, n_depth, n_draws))
         c_mat = np.zeros((depth_range.shape[0],n_draws,max_iter))
     else:
-        stop("style needs to be 1 of the 2 options")
+        NameError("style needs to be 1 of the 2 options")
 
 
 
@@ -210,7 +208,7 @@ def check_rf_grow(n_data, n_large, n_draws,
 
             if style == "level-base":
 
-                smooth_rf = smooth_rf.smooth_all(
+                smooth_rf = smooth_level.smooth_all(
                                     model_fit,
                                     X_trained = data,
                                     y_trained = y.ravel(),
@@ -309,7 +307,7 @@ def cost_vis(c_mat, depth_range=None):
                                     {"depth": depth_value,
                                     "sim": s_idx,
                                     "step idx": np.arange(c_mat_inner.shape[0],
-                                                          dtype = np.int)
+                                                          dtype = np.int),
                                     "c": c_mat_inner},
                                     columns = ["depth", "sim","c"])
 
@@ -348,12 +346,11 @@ if create_figs:
 
         depth_vis, data_vis_depth = depth_error_vis(score_mat,
                                              np.arange(2,50,2))
-
         data_vis_depth.to_csv("images/data_vis_depth_"+\
                                  data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
-                                 c + "_" +\
+                                 c_in + "_" +\
                                  style + "_" +\
                                  initial_lamb + "_" +\
                                  batch + "_" +\
@@ -365,7 +362,7 @@ if create_figs:
                                  data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
-                                 c + "_" +\
+                                 c_in + "_" +\
                                  style + "_" +\
                                  initial_lamb + "_" +\
                                  batch + "_" +\
@@ -378,7 +375,7 @@ if create_figs:
                                  data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
-                                 c + "_" +\
+                                 c_in + "_" +\
                                  style + "_" +\
                                  "distance-"+ d +\
                                  initial_lamb + "_" +\
@@ -391,7 +388,7 @@ if create_figs:
                                  data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
-                                 c + "_" +\
+                                 c_in + "_" +\
                                  style + "_" +\
                                  "distance-"+ d +\
                                  initial_lamb + "_" +\
