@@ -368,10 +368,10 @@ if create_figs:
                                  batch + "_" +\
                                  str(max_iter) + ".pdf")
 
-        if style == "element-based":
-            cost_vis, data_vis_cost = cost_vis(c, np.arange(2,50,2))
+    if style == "element-based":
+        cost_vis, data_vis_cost = cost_vis(c, np.arange(2,50,2))
 
-            data_vis_cost.to_csv("images/data_vis_cost_"+\
+        data_vis_cost.to_csv("images/data_vis_cost_"+\
                                  data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
@@ -382,7 +382,7 @@ if create_figs:
                                  batch + "_" +\
                                  str(max_iter) + ".csv")
 
-            save_as_pdf_pages([cost_vis  +\
+        save_as_pdf_pages([cost_vis  +\
                            theme(figure_size = (8,6))],
                           filename = "images/cost_vis" +\
                                  data_set + "_" +\
