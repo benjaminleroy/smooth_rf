@@ -234,7 +234,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 resample_tune= resample_input,
                                 no_constraint = not constrained,
                                 subgrad_max_num = max_iter,
-                                subgrad_t_fix = 10,
+                                subgrad_t_fix = 1,
                                 parents_all=parents_all,
                                 verbose = False,
                                 all_trees = all_trees,
@@ -309,13 +309,13 @@ def cost_vis(c_mat, depth_range=None):
                                     "step idx": np.arange(c_mat_inner.shape[0],
                                                           dtype = np.int),
                                     "c": c_mat_inner},
-                                    columns = ["depth", "sim","c"])
+                                    columns = ["depth", "sim","step idx","c"])
 
             data_vis = data_vis.append(data_vis_inner)
 
     ggout = ggplot(data_vis, aes(x = "step idx", y = "c",
-                                 color = "sim")) +\
-        geom_line() +\
+                                 color = "factor(sim)")) +\
+        geom_line(alpha = .1) +\
         facet_wrap(facets="depth") +\
         labs(y = "Cost Function",
              x = "step of optimization")
@@ -346,52 +346,78 @@ if create_figs:
 
     depth_vis, data_vis_depth = depth_error_vis(score_mat,
                                          np.arange(2,50,2))
-    data_vis_depth.to_csv("images/data_vis_depth_"+\
-                             data_set + "_" +\
-                             "trees" + str(num_trees) + "_" +\
-                             tuning + "_" +\
-                             c_in + "_" +\
-                             style + "_" +\
-                             initial_lamb + "_" +\
-                             batch + "_" +\
-                             str(max_iter) + ".csv")
 
-    save_as_pdf_pages([depth_vis  +\
-                       theme(figure_size = (8,6))],
-                      filename = "images/depth_vis" +\
-                             data_set + "_" +\
-                             "trees" + str(num_trees) + "_" +\
-                             tuning + "_" +\
-                             c_in + "_" +\
-                             style + "_" +\
-                             initial_lamb + "_" +\
-                             batch + "_" +\
-                             str(max_iter) + ".pdf")
+    if style == "level-base":
 
-    if style == "element-based":
-        cost_vis, data_vis_cost = cost_vis(c, np.arange(2,50,2))
-
-        data_vis_cost.to_csv("images/data_vis_cost_"+\
+        data_vis_depth.to_csv("images/data_vis_depth_"+\
                                  data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
                                  c_in + "_" +\
                                  style + "_" +\
-                                 "distance-"+ d +\
-                                 initial_lamb + "_" +\
+                                 "distance-"+ d + ".csv")
+
+        save_as_pdf_pages([depth_vis  +\
+                           theme(figure_size = (8,6))],
+                          filename = "images/depth_vis_"  +\
+                                 data_set + "_" +\
+                                 "trees" + str(num_trees) + "_" +\
+                                 tuning + "_" +\
+                                 c_in + "_" +\
+                                 style + "_" +\
+                                 "distance-"+ d + ".pdf")
+
+    if style == "element-based":
+
+        data_vis_depth.to_csv("images/data_vis_depth_" +\
+                                 data_set + "_" +\
+                                 "trees" + str(num_trees) + "_" +\
+                                 tuning + "_" +\
+                                 c_in + "_" +\
+                                 style + "_" +\
+                                 "distance-"+ d + "_" +\
+                                 "init_lamb-" + initial_lamb + "_" +\
                                  batch + "_" +\
                                  str(max_iter) + ".csv")
 
-        save_as_pdf_pages([cost_vis  +\
+        save_as_pdf_pages([depth_vis  +\
                            theme(figure_size = (8,6))],
-                          filename = "images/cost_vis" +\
+                          filename = "images/depth_vis_" +\
                                  data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
                                  c_in + "_" +\
                                  style + "_" +\
-                                 "distance-"+ d +\
-                                 initial_lamb + "_" +\
+                                 "distance-"+ d + "_" +\
+                                 "init_lamb-" + initial_lamb + "_" +\
+                                 batch + "_" +\
+                                 str(max_iter) + ".pdf")
+
+
+
+        cost_vis, data_vis_cost = cost_vis(c, np.arange(2,50,2))
+
+        data_vis_cost.to_csv("images/data_vis_cost_" +\
+                                 data_set + "_" +\
+                                 "trees" + str(num_trees) + "_" +\
+                                 tuning + "_" +\
+                                 c_in + "_" +\
+                                 style + "_" +\
+                                 "distance-"+ d + "_" +\
+                                 "init_lamb-" + initial_lamb + "_" +\
+                                 batch + "_" +\
+                                 str(max_iter) + ".csv")
+
+        save_as_pdf_pages([cost_vis +\
+                           theme(figure_size = (8,6))],
+                          filename = "images/cost_vis_" +\
+                                 data_set + "_" +\
+                                 "trees" + str(num_trees) + "_" +\
+                                 tuning + "_" +\
+                                 c_in + "_" +\
+                                 style + "_" +\
+                                 "distance-"+ d + "_" +\
+                                 "init_lamb-" + initial_lamb + "_" +\
                                  batch + "_" +\
                                  str(max_iter) + ".pdf")
 
