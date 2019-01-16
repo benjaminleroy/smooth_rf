@@ -29,6 +29,15 @@ import smooth_level
 
 
 data_set = sys.argv[1]
+if data_set == "online_news":
+    data = pd.read_csv("data/OnlineNewsPopularity/OnlineNewsPopularity.csv")
+
+    y_all = np.log10(data[" shares"])
+    data_all = data.drop(columns = ["url"," timedelta"," shares"])
+    data_all = np.array(data_all)
+else:
+    y_all = None
+    data_all = None
 
 n = sys.argv[2]
 num_trees = np.int(n)
@@ -80,7 +89,7 @@ if s == "eb":
     m = sys.argv[9]
     max_iter = np.int(m)
 
-    subgrad_fix_t = sys.argv[10]
+    subgrad_fix_t = np.float(sys.argv[10])
 
 else:
     initial_lamb = ""
@@ -109,7 +118,6 @@ def check_rf_grow(n_data, n_large, n_draws,
                initial_lamb = ["rf-init", "random-init"],
                max_iter = 10000, t = 1,
                data_all = None, y_all = None):
-
 
     model_type = None
     if reg_or_class == "reg":
@@ -196,6 +204,8 @@ def check_rf_grow(n_data, n_large, n_draws,
                     sklearn.model_selection.train_test_split(data_all,
                                                              y_all,
                                                              test_size = .5)
+                data_tune = None
+                y_tune = None
             else:
                 # data generation
                 all_dat = data_generator(large_n=n_data)
@@ -248,7 +258,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 resample_tune= resample_input,
                                 no_constraint = not constrained,
                                 subgrad_max_num = max_iter,
-                                subgrad_t_fix = subgrad_fix_t,
+                                subgrad_t_fix = t,
                                 parents_all=parents_all,
                                 verbose = False,
                                 all_trees = all_trees,
@@ -301,6 +311,7 @@ def depth_error_vis(cv_mat, idx_range=None):
              x = "Index")
 
     return ggout, data_vis
+
 
 def cost_vis(c_mat, depth_range=None):
     """
@@ -356,7 +367,9 @@ if create_figs:
            parents_all = parents_all,
            batch = batch,
            initial_lamb = initial_lamb,
-           max_iter = max_iter)
+           max_iter = max_iter, t = subgrad_fix_t,
+           data_all = data_all, y_all = y_all
+           )
 
     depth_vis, data_vis_depth = depth_error_vis(score_mat,
                                          np.arange(2,50,2))
