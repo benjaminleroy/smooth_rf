@@ -15,22 +15,27 @@ import smooth_level
 
 
 # input
-# 1: num_trees = [1, 10, 300] (integer)
-# 2: tuning = ["resample", "oob", "oracle"]
-# 3: constrained = ["c","nc"]
-# 4: style = ["lb", "eb"]
-# 5: distance = ["l","p"]
+# 1: data_set = ["microsoft", "online_news"]
+# 2: num_trees = [1, 10, 300] (integer)
+# 3: tuning = ["resample", "oob", "oracle"]
+# 4: constrained = ["c","nc"]
+# 5: style = ["lb", "eb"]
+# 6: distance = ["l","p"]
 # next are only needed if s = "lb":
-# 6: initial lambda = ["rf","r"]
-# 7: batch = ["tree", "all"]
-# 8: max_iter = 10000
+# 7: initial lambda = ["rf","r"]
+# 8: batch = ["tree", "all"]
+# 9: max_iter = 10000
+# 10: t = [.1,1,10,100] (scalar)
 
-n = sys.argv[1]
+
+data_set = sys.argv[1]
+
+n = sys.argv[2]
 num_trees = np.int(n)
 
-tuning = sys.argv[2]
+tuning = sys.argv[3]
 
-c_in = sys.argv[3]
+c_in = sys.argv[4]
 if c_in == "c":
     constrained = True
 elif c_in == "nc":
@@ -38,7 +43,7 @@ elif c_in == "nc":
 else:
     NameError("c_in needs to be 1 of the 2 options")
 
-s = sys.argv[4]
+s = sys.argv[5]
 if s == "lb":
     style = "level-base"
 elif s == "eb":
@@ -47,7 +52,7 @@ else:
     NameError("s needs to be 1 of the 2 options")
 
 
-d = sys.argv[5]
+d = sys.argv[6]
 if d == "l":
     parents_all = False
 elif d == "p":
@@ -56,7 +61,7 @@ else:
     NameError("d needs to be 1 of 2 options")
 
 if s == "eb":
-    i = sys.argv[6]
+    i = sys.argv[7]
     if i == "rf":
         initial_lamb = "rf-init"
     elif i == "r":
@@ -64,7 +69,7 @@ if s == "eb":
     else:
         NameError("i needs to be 1 of the 2 options")
 
-    b = sys.argv[7]
+    b = sys.argv[8]
     if b == "tree":
         batch = "single-tree"
     elif b == "all":
@@ -72,22 +77,17 @@ if s == "eb":
     else:
         NameError("b needs to be 1 of 2 options")
 
-    m = sys.argv[8]
+    m = sys.argv[9]
     max_iter = np.int(m)
+
+    subgrad_fix_t = sys.argv[10]
+
 else:
     initial_lamb = ""
     batch = ""
     max_iter = ""
+    subgrad_fix_t = ""
 
-
-
-
-# without multiple options currently
-data_set = "microsoft"
-
-# reproducing example on page 114 (Microsoft)
-
-#np.random.seed(16)
 
 # check overfitting potential
 
@@ -107,7 +107,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                parents_all = False,
                batch = ["single-tree", "all-trees"],
                initial_lamb = ["rf-init", "random-init"],
-               max_iter = 10000,
+               max_iter = 10000, t = 1,
                data_all = None, y_all = None):
 
 
@@ -248,7 +248,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 resample_tune= resample_input,
                                 no_constraint = not constrained,
                                 subgrad_max_num = max_iter,
-                                subgrad_t_fix = 1,
+                                subgrad_t_fix = subgrad_fix_t,
                                 parents_all=parents_all,
                                 verbose = False,
                                 all_trees = all_trees,
@@ -391,6 +391,7 @@ if create_figs:
                                  style + "_" +\
                                  "distance-"+ d + "_" +\
                                  "init_lamb-" + initial_lamb + "_" +\
+                                 "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
                                  str(max_iter) + ".csv")
 
@@ -404,6 +405,7 @@ if create_figs:
                                  style + "_" +\
                                  "distance-"+ d + "_" +\
                                  "init_lamb-" + initial_lamb + "_" +\
+                                 "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
                                  str(max_iter) + ".pdf")
 
@@ -419,6 +421,7 @@ if create_figs:
                                  style + "_" +\
                                  "distance-"+ d + "_" +\
                                  "init_lamb-" + initial_lamb + "_" +\
+                                 "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
                                  str(max_iter) + ".csv")
 
@@ -432,6 +435,7 @@ if create_figs:
                                  style + "_" +\
                                  "distance-"+ d + "_" +\
                                  "init_lamb-" + initial_lamb + "_" +\
+                                 "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
                                  str(max_iter) + ".pdf")
 
