@@ -100,14 +100,15 @@ def get_random_seed():
 def check_rf_grow(n_data, n_large, n_draws,
                reg_or_class="reg", depth_range=np.arange(1,50),
                verbose = True, ntree=1,
-               data_set = ["microsoft", "knn"],
+               data_set = ["microsoft", "knn", "online_news"],
                tuning = ["resample", "oob", "oracle"],
                constrained = True,
                style = ["level-base", "element-based"],
                parents_all = False,
                batch = ["single-tree", "all-trees"],
                initial_lamb = ["rf-init", "random-init"],
-               max_iter = 10000):
+               max_iter = 10000,
+               data_all = None, y_all = None):
 
 
     model_type = None
@@ -148,8 +149,14 @@ def check_rf_grow(n_data, n_large, n_draws,
         data_generator = lambda large_n: smooth_base.generate_data_knn(
                                                      n=large_n,
                                                      p=np.array([.3,.7]))
+    elif data_set == "online_news":
+        if tuning == "oracle":
+            NameError("tuning cannot be oracle for the online_news dataset")
+        if data_all is None or y_all is None:
+            NameError("data_all and y_all must be inserted when using the "+\
+                      "online_news dataset")
     else:
-        NameError("data_set option needs to be 1 of the 2 options")
+        NameError("data_set option needs to be 1 of the 3 options")
 
     if tuning == "resample":
         resample_input = True
@@ -183,25 +190,32 @@ def check_rf_grow(n_data, n_large, n_draws,
 
     for i, max_depth in depth_iter:
         for j in np.arange(n_draws):
-            # data generation
-            all_dat = data_generator(large_n=n_data)
-            data, y = all_dat[0], all_dat[1]
-            y = y + 100
 
-            # tune
-            if tuning == "oracle":
-                all_dat_tune = data_generator(large_n=n_large)
-                data_tune, y_tune = all_dat_tune[0], all_dat_tune[1]
-                y_tune = y_tune + 100
-                y_tune = y_tune.ravel()
+            if data_set == "online_news":
+                data, data_test, y, y_test = \
+                    sklearn.model_selection.train_test_split(data_all,
+                                                             y_all,
+                                                             test_size = .5)
             else:
-                data_tune = None
-                y_tune = None
+                # data generation
+                all_dat = data_generator(large_n=n_data)
+                data, y = all_dat[0], all_dat[1]
+                y = y + 100
 
-            # test
-            all_dat_test = data_generator(large_n=n_data)
-            data_test, y_test = all_dat_test[0], all_dat_test[1]
-            y_test = y_test + 100
+                # tune
+                if tuning == "oracle":
+                    all_dat_tune = data_generator(large_n=n_large)
+                    data_tune, y_tune = all_dat_tune[0], all_dat_tune[1]
+                    y_tune = y_tune + 100
+                    y_tune = y_tune.ravel()
+                else:
+                    data_tune = None
+                    y_tune = None
+
+                # test
+                all_dat_test = data_generator(large_n=n_data)
+                data_test, y_test = all_dat_test[0], all_dat_test[1]
+                y_test = y_test + 100
 
             model = model_type(max_depth=max_depth,n_estimators=ntree)
             model_fit = model.fit(data, y)

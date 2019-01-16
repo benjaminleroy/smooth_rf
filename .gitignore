@@ -12,3 +12,6 @@
 
 # Image files
 images/*
+
+# Data Files
+data/*
