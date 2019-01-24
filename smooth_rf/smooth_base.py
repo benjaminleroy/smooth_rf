@@ -181,16 +181,13 @@ def create_decision_per_leafs(tree):
     return v_leaf, v_all
 
 
-def create_distance_mat_leaves(tree = None, decision_mat_leaves = None):
+def create_distance_mat_leaves(tree = None,
+                               decision_mat_leaves = None,
+                               style = ["standard", "max", "min"]):
     """
     create inner-tree based distance matrix for leaves from a tree or
     precomputed decision matrix for the leaves. The inner-tree distance is
-    defined as
-
-    D_ij = depth(obs_i) - depth(parent(i,j)).
-
-    Note that this "distance" is *not* symmetric - and should really be thought
-    of as a semi-metric.
+    defined as in the *details* section.
 
     Arguments:
     ----------
@@ -199,17 +196,45 @@ def create_distance_mat_leaves(tree = None, decision_mat_leaves = None):
     decision_mat_leaves : array (n_leaves, n_nodes)
         decision_matrix relative to leaves of a tree (columns have all nodes,
         whereas rows are just relative to the leaves)
+    style : string
+        style of inner-tree distance to use, see *details* for more
+
+    Details:
+    --------
+    For the different styles of inner-tree distance, there is currently 3
+    options: "standard", "max", and "min".
+
+    1. For "standard", we define the inner-tree distance as:
+
+        D_ij = depth(obs_i) - depth(parent(i,j)),
+
+        note that this "distance" is *not* symmetric - and should really be
+        thought of as a semi-metric.
+
+    2. For "max", we define the inner-tree distance as:
+
+        D_ij^{max} = max( D_ij , D_ji )
+
+    3. For "min", we define the inner-tree distance as:
+
+        D_ij^{min} = min( D_ij , D_ji )
 
     Returns:
     --------
     distance_matrix : array (n_leaves, n_leaves)
         non-symetric "distance" matrix relative to leaves in the tree - to be
         read "distance from row leave to column leave"
+
     """
+
+
     if tree is None and decision_mat_leaves is None:
         return
     if decision_mat_leaves is None:
         decision_mat_leaves, _ = create_decision_per_leafs(tree)
+
+    if (type(style) is list) and (len(style) > 1):
+        style = style[0]
 
     Q = decision_mat_leaves @ decision_mat_leaves.T
 
@@ -219,11 +244,40 @@ def create_distance_mat_leaves(tree = None, decision_mat_leaves = None):
     else:
         d = np.diagonal(Q)
 
-    return (d - Q.T).T
+    standard_distance = (d - Q.T).T
+
+    if style == "standard":
+        return standard_distance
+    elif style == "max":
+        standard_d_T = standard_distance.T
+        both = np.append(np.array(standard_distance).reshape(
+                                        (standard_distance.shape[0],
+                                         standard_distance.shape[1],
+                                         1)),
+                         np.array(standard_d_T).reshape(
+                                        (standard_d_T.shape[0],
+                                         standard_d_T.shape[1],
+                                         1)), axis = 2)
+        return np.max(both, axis = 2)
+    elif style == "min":
+        standard_d_T = standard_distance.T
+        both = np.append(np.array(standard_distance).reshape(
+                                        (standard_distance.shape[0],
+                                         standard_distance.shape[1],
+                                         1)),
+                         np.array(standard_d_T).reshape(
+                                        (standard_d_T.shape[0],
+                                         standard_d_T.shape[1],
+                                         1)), axis = 2)
+        return np.min(both, axis = 2)
+    else:
+        ValueError("style parameter needs to be 1 of the 3 choices.")
+
 
 def create_Gamma_eta_tree(tree,
                       dist_mat_leaves=None,
-                      parents_all=False):
+                      parents_all=False,
+                      dist_mat_style=["standard", "max", "min"]):
     """
     creates the Gamma and eta matrices for a single tree, where these two
     matrices are defined:
@@ -232,72 +286,65 @@ def create_Gamma_eta_tree(tree,
     eta_il = sum_j II(D_ij = l) n_j
 
     where n_j, y_j are the number of observations in leaf j and the predicted
-    value associated with with leaf j. Note that D_ij is the tree based
-    distance between leaf i and j.
+    value associated with  leaf j for regression, or where y_j = p_j, a
+    probably vector associated with leaf j in classification. Note that D_ij
+    is the tree based distance between leaf i and j.
 
     Arguments:
     ----------
-    tree : sklearn style tree
+    tree : sklearn style tree (DecisionTreeClassifier or DecisionTreeRegressor)
         grown tree to create distance matrix relative to
     dist_mat_leaves : array (n_leaves, n_leaves)
         non-symetric "distance" matrix relative to leaves in the tree - to be
         read "distance from row leave to column leave" The inner-tree
-        "distance" is defined as
-
-        D_ij = depth(obs_i) - depth(parent(i,j)).
-
-        Note that this "distance" is *not* symmetric - and should really be
-        thought of as a semi-metric.
-
-        This object is created if not provided.
+        "distance" has 3 options to be defined (as described by
+        create_distance_mat_leaves)
     parents_all : bool
         logic to instead include all observations with parent of distance k
         away
+    dist_mat_style : string
+        style of inner-tree distance to use, see *details* in the
+        create_distance_mat_leaves doc-string.
 
     Returns:
     --------
     Gamma : array (n_leaves, maximum depth of tree + 1)
+            (number of classes, n_leaves, maximum depth of tree + 1)
         see description above
     eta : array (n_leaves, maximum depth of tree + 1)
         see description above
     """
 
-    ############
-    ############
-    # Comments #
-    ############
-    #Currently allows for an x_original and y_original matrix to effect the
-    #counts in the nodes and the values associated with the nodes to not be the
-    #exact same from the trained tree.
-    ############
+    if type(tree) is sklearn.tree.tree.DecisionTreeRegressor:
 
-    # if x_original is not None:
-    #     V_original = tree.decision_path(x_original)
-    #     leaf_original = V_original[:,tree.tree_children_left == -1]
+        n_leaf_original = tree.tree_.weighted_n_node_samples[
+                                    tree.tree_.children_left == -1]
+        yhat_leaf_original = tree.tree_.value.ravel()[
+                                    tree.tree_.children_left == -1]
+        ny_leaf_original = n_leaf_original * yhat_leaf_original
 
-    #     n_leaf_original = leaf_original.sum(axis = 0) # check axis
+    elif type(tree) is sklearn.tree.tree.DecisionTreeClassifier:
 
-    #     if y_original is not None:
-    #         raise TypeError("y_original should not be none if x_original" +\
-    #                         " is not none")
-    #     yhat_leaf_original = (leaf_original @ y_original.ravel()) /\
-    #                             n_leaf_original
-
-    # else:
-    n_leaf_original = tree.tree_.weighted_n_node_samples[
+        n_leaf_original = tree.tree_.weighted_n_node_samples[
                                 tree.tree_.children_left == -1]
-    yhat_leaf_original = tree.tree_.value.ravel()[
-                                tree.tree_.children_left == -1]
-    # end of old `else`
+        ny_leaf_original = tree.tree_.value[
+                                tree.tree_.children_left == -1,:,:].reshape(
+                                                    n_leaf_original.shape[0],
+                                                    tree.tree_.value.shape[-1])
+        # yhat_leaf_original = np.diag(1/n_leaf_original) @ ny_leaf_original
 
-    ny_leaf_original = n_leaf_original * yhat_leaf_original
-    # V_new = tree.decision_path(x_new)
-    # leaf_new = V_new[:,tree.tree_children_left == -1]
+    else:
+        ValueError("tree needs either be a "+\
+                   "sklearn.tree.tree.DecisionTreeClassifier "+\
+                   "or a sklearn.tree.tree.DecisionTreeRegressor")
 
-    # n_leaf_new = leaf_new.sum(axis = 0) # check axis
+    ##############################
+    ## Distance Matrix Creation ##
+    ##############################
 
     if dist_mat_leaves is None:
-        dist_mat_leaves = create_distance_mat_leaves(tree)
+        dist_mat_leaves = create_distance_mat_leaves(tree,
+                                                     style = dist_mat_style)
 
     # creating a 3d sparse array
     xx_all = np.zeros(shape = (0,))
@@ -324,13 +371,14 @@ def create_Gamma_eta_tree(tree,
                               shape = (np.max(dist_mat_leaves)+1,
                                        dist_mat_leaves.shape[0],
                                        dist_mat_leaves.shape[1]))
-
     Gamma = (inner_sparse @ ny_leaf_original).T
     eta = (inner_sparse @ n_leaf_original).T
 
     return Gamma, eta
 
-def create_Gamma_eta_forest(forest, verbose=False, parents_all=False):
+
+def create_Gamma_eta_forest(forest, verbose=False, parents_all=False,
+                            dist_mat_style=["standard", "max", "min"]):
     """
     creates the Gamma and eta matrices for a forest (aka set of trees, where
     these two matrices are defined (per tree):
@@ -339,23 +387,31 @@ def create_Gamma_eta_forest(forest, verbose=False, parents_all=False):
     eta_il = sum_j II(D_ij = l) n_j
 
     where n_j, y_j are the number of observations in leaf j and the predicted
-    value associated with with leaf j. Note that D_ij is the tree based
-    distance between leaf i and j.
+    value associated with with leaf j for regression, or where y_j = p_j, a
+    probably vector associated with leaf j in classification. Note that
+    D_ij is the tree based distance between leaf i and j.
 
     Arguments:
     ----------
-    forest : sklearn style forest
-        grown forest with T total number of trees
+    forest : sklearn forest (sklearn.ensemble.forest.RandomForestRegressor or
+             sklearn.ensemble.forest.RandomForestClassifier)
+        grown forest
     verbose : bool
         logic to show tree analysis process
     parents_all : bool
         logic to instead include all observations with parent of distance k
         away
+   dist_mat_style : string
+        style of inner-tree distance to use, see *details* in the
+        create_distance_mat_leaves doc-string.
+
     Returns:
     --------
-    Gamma_all : array (sum_{t=1}^T n_leaves(t), maximum depth of forest + 1)
+    Gamma_all : array (sum_{t=1}^T n_leaves(t), maximum depth of forest + 1) or
+                (num_classes, sum_{t=1}^T n_leaves(t),
+                 maximum depth of forest + 1)
         A horizontal stacking of Gamma matrices as defined above for all trees
-        in the forest.
+        in the forest. (Regression and Classification is different)
     eta_all : array (sum_{t=1}^T n_leaves(t), maximum depth of forest + 1)
         A horizontal stacking of eta matrices as defined above for all trees
         in the forest.
@@ -366,7 +422,18 @@ def create_Gamma_eta_forest(forest, verbose=False, parents_all=False):
 
     _, max_depth = calc_depth_for_forest(forest, verbose = False)
 
-    Gamma_all = np.zeros(shape = (0, np.int(max_depth + 1)))
+    if type(forest) is sklearn.ensemble.forest.RandomForestRegressor:
+        Gamma_all = np.zeros(shape=(0, np.int(max_depth + 1)))
+        g_idx = 1
+    elif type(forest) is sklearn.ensemble.forest.RandomForestClassifier:
+        num_class = forest.n_classes_
+        Gamma_all = np.zeros(shape=(num_class, 0, np.int(max_depth + 1)))
+        g_idx = 2
+    else:
+        ValueError("random_forest needs to be either a " +\
+                   "sklearn.ensemble.forest.RandomForestClassifier " +\
+                   "or a sklearn.ensemble.forest.RandomForestRegressor")
+
     eta_all = np.zeros(shape = (0, np.int(max_depth + 1)))
     t_idx_all = np.zeros(shape = (0,))
 
@@ -377,14 +444,28 @@ def create_Gamma_eta_forest(forest, verbose=False, parents_all=False):
         first_iter = bar(list(first_iter))
 
     for t_idx, tree in first_iter:
-        g, n = create_Gamma_eta_tree(tree, parents_all=parents_all)
-        tree_n_leaf = g.shape[0]
-        if g.shape[1] != Gamma_all.shape[1]:
-            diff = Gamma_all.shape[1] - g.shape[1]
-            g = np.hstack((g, np.zeros((tree_n_leaf, diff))))
+        g, n = create_Gamma_eta_tree(tree, parents_all=parents_all,
+                                     dist_mat_style=dist_mat_style)
+        tree_n_leaf = g.shape[g_idx - 1]
+        if g.shape[g_idx] != Gamma_all.shape[g_idx]:
+            diff = Gamma_all.shape[g_idx] - g.shape[g_idx]
+
+            if g_idx == 1: # regressor
+                g = np.hstack((g, np.zeros((tree_n_leaf, diff))))
+            else: # classifier
+                g = np.concatenate((g,
+                                      np.zeros((num_class,
+                                                tree_n_leaf,
+                                                diff))),
+                                    axis = 2)
+
             n = np.hstack((n, np.zeros((tree_n_leaf, diff))))
 
-        Gamma_all = np.concatenate((Gamma_all, g))
+        if g_idx == 1: # regressor
+            Gamma_all = np.concatenate((Gamma_all, g))
+        else: # classifier
+            Gamma_all = np.concatenate((Gamma_all, g), axis = 1)
+
         eta_all = np.concatenate((eta_all, n))
         t_idx_all = np.concatenate((t_idx_all,
                                     t_idx * np.ones(tree_n_leaf,
@@ -524,6 +605,235 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     #eps = 1/n_obs_trained
     #numeric_eps = 1e-5
 
+
+
+    if (X_tune is None or y_tune is None) and not resample_tune:
+        oob_logic = True
+    else:
+        oob_logic = False
+
+
+    if (oob_logic or resample_tune) and \
+        (X_trained is None or y_trained is None):
+        raise TypeError("X_trained and y_trained need to be inserted for "+\
+                        "provided input of X_tune/y_tune and resample_tune "+\
+                        "parameters.")
+
+    if oob_logic or resample_tune:
+            n_obs_trained = X_trained.shape[0]
+
+    inner_rf = copy.deepcopy(random_forest)
+    inner_rf2 = copy.deepcopy(random_forest)
+
+    forest = inner_rf.estimators_
+    forest2 = inner_rf2.estimators_
+
+    _, max_depth = calc_depth_for_forest(random_forest,verbose=False)
+    max_depth = np.int(max_depth)
+
+    # getting structure from built trees
+    Gamma, eta, t_idx_vec = create_Gamma_eta_forest(random_forest,
+                                                    verbose=verbose,
+                                                    parents_all=parents_all)
+
+    first_iter = forest
+    if verbose:
+        bar = progressbar.ProgressBar()
+        first_iter = bar(first_iter)
+
+    # getting structure for tuning y_leaves and weights for each leaf
+    y_all = np.zeros((0,))
+    weight_all = np.zeros((0,))
+
+    for t in first_iter:
+        tree = t.tree_
+
+        num_leaf = np.sum(tree.children_left == -1)
+
+        # node associated
+        # hmmm - to grab the OOB we could do:
+        # _generate_sample_indices
+        # from https://github.com/scikit-learn/scikit-learn/blob/bac89c253b35a8f1a3827389fbee0f5bebcbc985/sklearn/ensemble/forest.py#L78
+        # just need to grab the tree's random state (t.random_state)
+
+
+        # observed information
+        if oob_logic:
+            random_state = t.random_state
+            oob_indices = \
+                sklearn.ensemble.forest._generate_unsampled_indices(
+                                                                 random_state,
+                                                                 n_obs_trained)
+            X_tune = X_trained[oob_indices,:]
+            y_tune = y_trained[oob_indices]
+
+        if resample_tune:
+            resample_indices = \
+                sklearn.ensemble.forest._generate_sample_indices(None,
+                                                                 n_obs_trained)
+            X_tune = X_trained[resample_indices,:]
+            y_tune = y_trained[resample_indices]
+
+        # create y_leaf and weights for observed
+        obs_V = t.decision_path(X_tune)
+        obs_V_leaf = obs_V[:,tree.children_left == -1]
+        obs_weight = obs_V_leaf.sum(axis = 0).ravel() # by column (leaf)
+
+        #---
+        # for clean division without dividing by 0
+        obs_weight_div = obs_weight.copy()
+        obs_weight_div[obs_weight_div == 0] = 1
+
+        obs_y_leaf = (obs_V_leaf.T @ y_tune) / obs_weight_div
+
+        y_all = np.concatenate((y_all, np.array(obs_y_leaf).ravel()))
+        weight_all = np.concatenate((weight_all,
+                                     np.array(obs_weight).ravel()))
+
+    #---
+    # Optimization
+    #---
+    if initial_lamb_seed is None:
+        lamb = np.zeros(Gamma.shape[1]) #sanity check
+        lamb[0] = 1
+    else:
+        np.random.seed(initial_lamb_seed)
+        lamb = np.random.uniform(size = Gamma.shape[1])
+        lamb = lamb / lamb.sum()
+
+
+
+    if all_trees:
+        n = t_idx_vec.shape
+        t_idx_vec = np.zeros(n, dtype = np.int)
+
+    if not sanity_check:
+        lamb,lamb_last,c = subgrad_descent(y_all, weight_all,
+                               Gamma, eta, t_idx_vec,
+                               lamb_init=lamb, # no change
+                               t_fix=subgrad_t_fix,
+                               num_steps=subgrad_max_num,
+                               constrained=not no_constraint,
+                               verbose=verbose)
+
+    #---
+    # update random forest object (correct estimates from new lambda)
+    #---
+    y_leaf_new_all = (Gamma @ lamb) / (eta @ lamb)
+
+    # to avoid divide by 0 errors (this may be a problem relative to the
+    #   observed values)
+    eta_fill2 = (eta @ lamb_last)
+    eta_fill2[eta_fill2 == 0] = 1
+    y_leaf_new_all2 = (Gamma @ lamb_last) / eta_fill2
+    y_leaf_new_all2[(eta @ lamb_last) == 0] = 0
+
+    start_idx = 0
+    for t in forest:
+        tree = t.tree_
+        num_leaf = np.sum(tree.children_left == -1)
+
+
+        tree.value[tree.children_left == -1,:,:] = \
+            y_leaf_new_all[start_idx:(start_idx + num_leaf)].reshape((-1,1,1))
+
+        start_idx += num_leaf
+
+    inner_rf.lamb = lamb
+
+    start_idx2 = 0
+    for t in forest2:
+        tree = t.tree_
+        num_leaf = np.sum(tree.children_left == -1)
+
+
+        tree.value[tree.children_left == -1,:,:] = \
+            y_leaf_new_all[start_idx2:(start_idx2 + \
+                                       num_leaf)].reshape((-1,1,1))
+
+        start_idx += num_leaf
+
+    inner_rf2.lamb = lamb_last
+
+    return inner_rf, inner_rf2, lamb_last, c
+
+def smooth_classifier(random_forest, X_trained=None, y_trained=None,
+               X_tune=None, y_tune=None, verbose=True,
+               no_constraint=False, sanity_check=False,
+               resample_tune=False,
+               subgrad_max_num=1000, subgrad_t_fix=1,
+               all_trees=False,
+               initial_lamb_seed=None,
+               parents_all=False):
+    """
+    creates a smooth random forest (1 lambda set across all trees)
+
+    this version uses the scaling relative to each observation
+
+    Args:
+    ----
+    random_forest : RandomForestClassifier
+        pre-trained classification based random forest
+    X_trained : array (n, p)
+        X data array used to create the inputted random_forest. Note that this
+        is assumed to be the correct data - and is used if the smoothing is
+        preformed with either the oob sample(done by default if X_tune,
+        y_tune are None and resample_tune is False), or another bootstrap
+        sample (done when resample_tune is True).
+        (default is none)
+    y_trained : array (n, c)
+        y data array used to create the inputted random_forest, (c classes)
+        (default is none)
+    X_tune : array (m, p)
+        X data array to use in smoothing the random forest (default is none)
+    y_tune : array (m, c)
+        y data array to use in smoothing the random forest (default is none)
+    verbose : bool
+        logic to show tree analysis process
+    no_constraint : bool
+        logic to not constrain the weights
+    sanity_check : bool
+        logic to do full process but keep same weights
+    resample_tune: bool
+        logic to tune / optimize with another bootstrap same from X
+    subgrad_max_num : int
+        number of steps to take for the subgradient optimization
+    subgrad_t_fix : scalar
+        value for fixed t step size for gradient descent
+    all_trees : bool
+        logic to use all trees (and therefore do full gradient descent)
+    initial_lamb_seed : scalar
+        initial value for seed (default is None) to randomly select the
+        starting point of lambda
+    parents_all : bool
+        logic to instead include all observations with parent of distance k
+        away
+
+    Returns:
+    --------
+    an updated RandomForestRegressor object with values for each node altered
+    if desirable
+
+    Comments:
+    ---------
+
+    If X_tune and/or y_tune is None then we will optimize each tree with oob
+    samples.
+    """
+
+    #n_obs_trained = X_trained.shape[0]
+    #eps = 1/n_obs_trained
+    #numeric_eps = 1e-5
+
+
+    if type(random_forest) is sklearn.ensemble.RandomForestClassifier:
+        rf_type = "class"
+    elif type(random_forest) is sklearn.ensemble.RandomForestRegressor:
+        rf_type = "reg"
+    else:
+        ValueError("random_forest needs to be either a " +\
+                   "sklearn.ensemble.RandomForestClassifier " +\
+                   "or a sklearn.ensemble.RandomForestRegressor")
 
 
     if (X_tune is None or y_tune is None) and not resample_tune:

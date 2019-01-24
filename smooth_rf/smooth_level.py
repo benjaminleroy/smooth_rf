@@ -19,8 +19,8 @@ import pdb
 # some built functions libraries
 # sys.path.append("../../filament_and_rfdepth/code/functions/")
 # import projected_grad_lamb_update as projgrad
-import smooth_base
-from smooth_base import depth_per_node, create_Gamma_eta_forest
+import smooth_rf
+from smooth_rf import depth_per_node, create_Gamma_eta_forest
 
 ##################################
 # Base Tree and Forest Structure #
@@ -311,7 +311,7 @@ def test_make_kernel():
 
     data = np.array(X_train[:amount,:])
 
-    depth_dict, max_depth = smooth_base.calc_depth_for_forest(random_forest,
+    depth_dict, max_depth = smooth_rf.calc_depth_for_forest(random_forest,
                                                   verbose = False)
 
     Vt_dict = make_Vt_mat(random_forest, data, depth_dict = depth_dict,
@@ -450,7 +450,7 @@ def test_depth_dist():
 
     data = np.array(X_train[:amount,:])
 
-    depth_dict, max_depth = smooth_base.calc_depth_for_forest(random_forest,
+    depth_dict, max_depth = smooth_rf.calc_depth_for_forest(random_forest,
                                                   verbose = False)
 
     Vt_dict = make_Vt_mat(random_forest, data, depth_dict = depth_dict,
@@ -469,8 +469,12 @@ def test_depth_dist():
     assert K_mat.shape == DD_mat.shape, \
         "dimensions between K_mat and DD_mat should be the same"
 
-    assert np.all(np.diag(DD_mat.todense()) == 0), \
-        "diagonal should be naturally 0 (has error)"
+    if type(DD_mat) is sparse.coo.core.COO:
+        assert np.all(np.diag(DD_mat.todense()) == 0), \
+            "diagonal should be naturally 0 (has error)"
+    else:
+        assert np.all(np.diag(DD_mat) == 0), \
+            "diagonal should be naturally 0 (has error)"
 
     assert np.all(DD_mat >= 0), \
         "all entries should be positive in DD (has error)"
@@ -670,7 +674,7 @@ def smooth(random_forest, X_trained, y_trained, X_tune=None, y_tune=None):
 
     forest = inner_rf.estimators_
 
-    _, max_depth = smooth_base.calc_depth_for_forest(random_forest, verbose=False)
+    _, max_depth = smooth_rf.calc_depth_for_forest(random_forest, verbose=False)
     max_depth = np.int(max_depth)
     inner_rf.lamb = np.zeros((len(forest),max_depth + 1))
 
@@ -844,7 +848,7 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
 
     forest = inner_rf.estimators_
 
-    _, max_depth = smooth_base.calc_depth_for_forest(random_forest,verbose=False)
+    _, max_depth = smooth_rf.calc_depth_for_forest(random_forest,verbose=False)
     max_depth = np.int(max_depth)
 
     # Gamma_all = np.zeros((0,max_depth + 1))
@@ -948,7 +952,7 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
         obs_y_leaf_all = np.hstack((obs_y_leaf_all,
                                     np.array(obs_y_leaf).ravel()))
 
-    ga, et, _ = smooth_base.create_Gamma_eta_forest(inner_rf,
+    ga, et, _ = smooth_rf.create_Gamma_eta_forest(inner_rf,
                                                     verbose=verbose,
                                                     parents_all=parents_all)
     #pdb.set_trace()
