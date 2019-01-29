@@ -9,9 +9,11 @@ from plotnine import *
 import pdb
 import sys
 
-sys.path.append("../smooth_rf/")
-import smooth_base
-import smooth_level
+#sys.path.append("../smooth_rf/")
+#import smooth_base
+#import smooth_level
+
+import smooth_rf
 
 
 # input
@@ -158,9 +160,9 @@ def check_rf_grow(n_data, n_large, n_draws,
         initial_lamb = initial_lamb[0]
 
     if data_set == "microsoft":
-        data_generator = smooth_base.generate_data
+        data_generator = smooth_rf.generate_data
     elif data_set == "knn":
-        data_generator = lambda large_n: smooth_base.generate_data_knn(
+        data_generator = lambda large_n: smooth_rf.generate_data_knn(
                                                      n=large_n,
                                                      p=np.array([.3,.7]))
     elif data_set == "online_news":
@@ -238,7 +240,7 @@ def check_rf_grow(n_data, n_large, n_draws,
 
             if style == "level-base":
 
-                smooth_rf = smooth_level.smooth_all(
+                smooth_rf = smooth_rf.smooth_all(
                                     model_fit,
                                     X_trained = data,
                                     y_trained = y.ravel(),
@@ -255,7 +257,7 @@ def check_rf_grow(n_data, n_large, n_draws,
 
             elif style ==  "element-based":
 
-                smooth_rf_opt, smooth_rf_last ,_, c = smooth_base.smooth(
+                smooth_rf_opt, smooth_rf_last ,_, c = smooth_rf.smooth(
                                 model_fit,
                                 X_trained = data,
                                 y_trained = y.ravel(),
