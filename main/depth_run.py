@@ -21,11 +21,12 @@ import smooth_level
 # 4: constrained = ["c","nc"]
 # 5: style = ["lb", "eb"]
 # 6: distance = ["l","p"]
+# 7: inner_distance = ["standard", "max", "min"]
 # next are only needed if s = "lb":
-# 7: initial lambda = ["rf","r"]
-# 8: batch = ["tree", "all"]
-# 9: max_iter = 10000
-# 10: t = [.1,1,10,100] (scalar)
+# 8: initial lambda = ["rf","r"]
+# 9: batch = ["tree", "all"]
+# 10: max_iter = 10000
+# 11: t = [.1,1,10,100] (scalar)
 
 
 data_set = sys.argv[1]
@@ -69,8 +70,13 @@ elif d == "p":
 else:
     NameError("d needs to be 1 of 2 options")
 
+inner_dist = sys.arv[7]
+if inner_dist not in ["standard", "max", "min"]:
+    NameError("inner_dist, needs to be 1 of 3 options")
+
+
 if s == "eb":
-    i = sys.argv[7]
+    i = sys.argv[8]
     if i == "rf":
         initial_lamb = "rf-init"
     elif i == "r":
@@ -78,7 +84,7 @@ if s == "eb":
     else:
         NameError("i needs to be 1 of the 2 options")
 
-    b = sys.argv[8]
+    b = sys.argv[9]
     if b == "tree":
         batch = "single-tree"
     elif b == "all":
@@ -86,10 +92,10 @@ if s == "eb":
     else:
         NameError("b needs to be 1 of 2 options")
 
-    m = sys.argv[9]
+    m = sys.argv[10]
     max_iter = np.int(m)
 
-    subgrad_fix_t = np.float(sys.argv[10])
+    subgrad_fix_t = np.float(sys.argv[11])
 
 else:
     initial_lamb = ""

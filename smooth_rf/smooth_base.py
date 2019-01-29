@@ -544,7 +544,8 @@ def smooth(random_forest, X_trained=None, y_trained=None,
                subgrad_max_num=1000, subgrad_t_fix=1,
                all_trees=False,
                initial_lamb_seed=None,
-               parents_all=False):
+               parents_all=False,
+               distance_style=["standard","max", "min"]):
     """
     creates a smooth random forest (1 lambda set across all trees)
 
@@ -588,7 +589,9 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     parents_all : bool
         logic to instead include all observations with parent of distance k
         away
-
+   distance_style : string
+        style of inner-tree distance to use, see *details* in the
+        create_distance_mat_leaves doc-string.
     Returns:
     --------
     an updated RandomForestRegressor object with values for each node altered
@@ -633,8 +636,9 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
     # getting structure from built trees
     Gamma, eta, t_idx_vec = create_Gamma_eta_forest(random_forest,
-                                                    verbose=verbose,
-                                                    parents_all=parents_all)
+                                                verbose=verbose,
+                                                parents_all=parents_all,
+                                                dist_mat_style=distance_style)
 
     first_iter = forest
     if verbose:
