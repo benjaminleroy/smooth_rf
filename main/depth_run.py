@@ -9,7 +9,7 @@ from plotnine import *
 import pdb
 import sys
 
-sys.path.append("smooth_rf/")
+sys.path.append("../smooth_rf/")
 import smooth_base
 import smooth_level
 
