@@ -537,7 +537,7 @@ def calc_cost(y, Gamma, eta, weights, lamb):
     return np.sum( (residuals**2) * weights)
 
 
-def smooth(random_forest, X_trained=None, y_trained=None,
+def smooth_regression_old(random_forest, X_trained=None, y_trained=None,
                X_tune=None, y_tune=None, verbose=True,
                no_constraint=False, sanity_check=False,
                resample_tune=False,
@@ -761,14 +761,15 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
     return inner_rf, inner_rf2, lamb_last, c
 
-def smooth_classifier(random_forest, X_trained=None, y_trained=None,
+def smooth(random_forest, X_trained=None, y_trained=None,
                X_tune=None, y_tune=None, verbose=True,
                no_constraint=False, sanity_check=False,
                resample_tune=False,
                subgrad_max_num=1000, subgrad_t_fix=1,
                all_trees=False,
                initial_lamb_seed=None,
-               parents_all=False):
+               parents_all=False,
+               distance_style=["standard","max", "min"]):
     """
     creates a smooth random forest (1 lambda set across all trees)
 
@@ -776,8 +777,10 @@ def smooth_classifier(random_forest, X_trained=None, y_trained=None,
 
     Args:
     ----
-    random_forest : RandomForestClassifier
-        pre-trained classification based random forest
+    random_forest : sklearn forest
+            (sklearn.ensemble.forest.RandomForestRegressor or
+             sklearn.ensemble.forest.RandomForestClassifier)
+        pre-trained classification or regression based random forest
     X_trained : array (n, p)
         X data array used to create the inputted random_forest. Note that this
         is assumed to be the correct data - and is used if the smoothing is
@@ -812,11 +815,14 @@ def smooth_classifier(random_forest, X_trained=None, y_trained=None,
     parents_all : bool
         logic to instead include all observations with parent of distance k
         away
+   distance_style : string
+        style of inner-tree distance to use, see *details* in the
+        create_distance_mat_leaves doc-string.
 
     Returns:
     --------
-    an updated RandomForestRegressor object with values for each node altered
-    if desirable
+    an updated RandomForestClassifier or RandomForestRegressor object with
+    values for each node altered (depending on "sanity_check")
 
     Comments:
     ---------
@@ -866,8 +872,9 @@ def smooth_classifier(random_forest, X_trained=None, y_trained=None,
 
     # getting structure from built trees
     Gamma, eta, t_idx_vec = create_Gamma_eta_forest(random_forest,
-                                                    verbose=verbose,
-                                                    parents_all=parents_all)
+                                                verbose=verbose,
+                                                parents_all=parents_all,
+                                                dist_mat_style=distance_style)
 
     first_iter = forest
     if verbose:
@@ -875,7 +882,12 @@ def smooth_classifier(random_forest, X_trained=None, y_trained=None,
         first_iter = bar(first_iter)
 
     # getting structure for tuning y_leaves and weights for each leaf
-    y_all = np.zeros((0,))
+    if rf_type == "reg":
+        y_all = np.zeros((0,))
+    else:
+        y_all = np.zeros((0,Gamma.shape[0]))
+
+
     weight_all = np.zeros((0,))
 
     for t in first_iter:
@@ -900,12 +912,18 @@ def smooth_classifier(random_forest, X_trained=None, y_trained=None,
             X_tune = X_trained[oob_indices,:]
             y_tune = y_trained[oob_indices]
 
+            if rf_type == "class":
+                y_tune = np.array(pd.get_dummies(y_tune))
+
         if resample_tune:
             resample_indices = \
                 sklearn.ensemble.forest._generate_sample_indices(None,
                                                                  n_obs_trained)
             X_tune = X_trained[resample_indices,:]
             y_tune = y_trained[resample_indices]
+
+            if rf_type == "class":
+                y_tune = np.array(pd.get_dummies(y_tune))
 
         # create y_leaf and weights for observed
         obs_V = t.decision_path(X_tune)
@@ -917,9 +935,15 @@ def smooth_classifier(random_forest, X_trained=None, y_trained=None,
         obs_weight_div = obs_weight.copy()
         obs_weight_div[obs_weight_div == 0] = 1
 
-        obs_y_leaf = (obs_V_leaf.T @ y_tune) / obs_weight_div
+        # obs_y_leaf is either \hat{y}_obs or \hat{p}_obs
+        if rf_type == "reg":
+            obs_y_leaf = (obs_V_leaf.T @ y_tune) / obs_weight_div
+            y_all = np.concatenate((y_all, np.array(obs_y_leaf).ravel()))
+        else:
+            obs_y_leaf = (obs_V_leaf.T @ y_tune) / obs_weight_div.T
+            y_all = np.concatenate((y_all, np.array(obs_y_leaf)))
 
-        y_all = np.concatenate((y_all, np.array(obs_y_leaf).ravel()))
+
         weight_all = np.concatenate((weight_all,
                                      np.array(obs_weight).ravel()))
 
@@ -927,11 +951,11 @@ def smooth_classifier(random_forest, X_trained=None, y_trained=None,
     # Optimization
     #---
     if initial_lamb_seed is None:
-        lamb = np.zeros(Gamma.shape[1]) #sanity check
+        lamb = np.zeros(Gamma.shape[-1]) #sanity check
         lamb[0] = 1
     else:
         np.random.seed(initial_lamb_seed)
-        lamb = np.random.uniform(size = Gamma.shape[1])
+        lamb = np.random.uniform(size = Gamma.shape[-1])
         lamb = lamb / lamb.sum()
 
 
@@ -939,6 +963,19 @@ def smooth_classifier(random_forest, X_trained=None, y_trained=None,
     if all_trees:
         n = t_idx_vec.shape
         t_idx_vec = np.zeros(n, dtype = np.int)
+
+
+    if rf_type == "class":
+        Gamma_shape = Gamma.shape
+        num_classes = Gamma.shape[0]
+        Gamma = Gamma.reshape((Gamma.shape[0]*Gamma.shape[1],
+                                     Gamma.shape[2]))
+
+        eta = np.tile(eta, (num_classes,1))
+        y_all = y_all.T.reshape((-1,))
+        weight_all = np.tile(weight_all, num_classes)
+        t_idx_vec = np.tile(t_idx_vec, num_classes)
+
 
     if not sanity_check:
         lamb,lamb_last,c = subgrad_descent(y_all, weight_all,
@@ -952,39 +989,55 @@ def smooth_classifier(random_forest, X_trained=None, y_trained=None,
     #---
     # update random forest object (correct estimates from new lambda)
     #---
-    y_leaf_new_all = (Gamma @ lamb) / (eta @ lamb)
-
     # to avoid divide by 0 errors (this may be a problem relative to the
     #   observed values)
+
+    eta_fill = (eta @ lamb)
+    eta_fill[eta_fill == 0] = 1
+    y_leaf_new_all = (Gamma @ lamb_last) / eta_fill
+    y_leaf_new_all[(eta @ lamb_last) == 0] = 0
+
     eta_fill2 = (eta @ lamb_last)
     eta_fill2[eta_fill2 == 0] = 1
     y_leaf_new_all2 = (Gamma @ lamb_last) / eta_fill2
     y_leaf_new_all2[(eta @ lamb_last) == 0] = 0
+
+    if rf_type == "class":
+        y_leaf_new_all = y_leaf_new_all.reshape((-1,num_classes))
+        y_leaf_new_all2 = y_leaf_new_all2.reshape((-1,num_classes))
 
     start_idx = 0
     for t in forest:
         tree = t.tree_
         num_leaf = np.sum(tree.children_left == -1)
 
-
-        tree.value[tree.children_left == -1,:,:] = \
-            y_leaf_new_all[start_idx:(start_idx + num_leaf)].reshape((-1,1,1))
+        if rf_type == "reg":
+            tree.value[tree.children_left == -1,:,:] = \
+                y_leaf_new_all[start_idx:(start_idx + num_leaf)].reshape((-1,1,1))
+        else:
+            tree.value[tree.children_left == -1,:,:] = \
+                y_leaf_new_all[start_idx:(start_idx + num_leaf)].reshape((-1,1,num_classes))
 
         start_idx += num_leaf
 
     inner_rf.lamb = lamb
+
 
     start_idx2 = 0
     for t in forest2:
         tree = t.tree_
         num_leaf = np.sum(tree.children_left == -1)
 
-
-        tree.value[tree.children_left == -1,:,:] = \
-            y_leaf_new_all[start_idx2:(start_idx2 + \
-                                       num_leaf)].reshape((-1,1,1))
+        if rf_type == "reg":
+            tree.value[tree.children_left == -1,:,:] = \
+                y_leaf_new_all2[start_idx2:(start_idx2 + num_leaf)].reshape((-1,1,1))
+        else:
+            tree.value[tree.children_left == -1,:,:] = \
+                y_leaf_new_all2[start_idx2:(start_idx2 + num_leaf)].reshape((-1,1,num_classes))
 
         start_idx += num_leaf
+
+
 
     inner_rf2.lamb = lamb_last
 

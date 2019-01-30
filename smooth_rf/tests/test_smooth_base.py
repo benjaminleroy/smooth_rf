@@ -659,3 +659,71 @@ def test_take_gradient():
     pass
 
 
+def test_smooth_classifier():
+    """
+    test for smooth- classifier, only runs on example dataset, checks for errs
+
+    """
+
+    try:
+        X_trained = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
+        np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
+        axis = 0)
+        y_trained = np.concatenate((np.zeros(100, dtype = np.int),
+                             np.ones(100, dtype = np.int)))
+        amount = np.int(200)
+
+        # creating a random forest
+        rf_class_known = sklearn.ensemble.RandomForestClassifier(
+                                                        n_estimators = 5,
+                                                        min_samples_leaf = 1)
+        fit_rf_known = rf_class_known.fit(X = np.array(X_trained)[:amount,:],
+                                      y = y_trained[:amount].ravel())
+        forest = fit_rf_known.estimators_
+
+        random_forest = fit_rf_known
+        verbose = True
+        parents_all = True
+        distance_style = "standard"
+
+        # Gamma (2, 370, 8)
+        # eta (370, 8)
+        a,b,c,d = smooth_rf.smooth(random_forest, X_trained, y_trained,
+                                    parents_all=True, verbose = False)
+    except:
+        assert("error running smoothing_function for a random forest classifier")
+
+
+def test_smooth_regressor():
+    """
+    test for smooth- regressor, only runs on example dataset, checks for errs
+    """
+    try:
+        X_trained = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
+        np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
+        axis = 0)
+        y_trained = np.concatenate((np.zeros(100, dtype = np.int),
+                             np.ones(100, dtype = np.int)))
+        amount = np.int(200)
+        # creating a random forest
+        rf_reg = sklearn.ensemble.RandomForestRegressor(
+                                                        n_estimators = 5,
+                                                        min_samples_leaf = 1)
+        fit_reg = rf_class_known.fit(X = np.array(X_trained)[:amount,:],
+                                      y = y_trained[:amount].ravel())
+        forest = fit_rf_known.estimators_
+
+        random_forest = fit_rf_known
+        verbose = True
+        parents_all = True
+        distance_style = "standard"
+
+        a,b,c,d = smooth_rf.smooth(random_forest, X_trained, y_trained,
+                                    parents_all=True, verbose = False)
+
+    except:
+        assert("error running smoothing_function for a random forest classifier")
+
+
