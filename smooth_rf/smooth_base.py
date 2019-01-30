@@ -824,6 +824,8 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     an updated RandomForestClassifier or RandomForestRegressor object with
     values for each node altered (depending on "sanity_check")
 
+    `return inner_rf, inner_rf2, lamb_last, c`
+
     Comments:
     ---------
 

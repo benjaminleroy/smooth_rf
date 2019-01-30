@@ -232,7 +232,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                     y_tune = None
 
                 # test
-                all_dat_test = data_generator(large_n=n_data)
+                all_dat_test = data_generator(large_n=n_large)
                 data_test, y_test = all_dat_test[0], all_dat_test[1]
                 y_test = y_test + 100
 
