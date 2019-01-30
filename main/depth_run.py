@@ -14,7 +14,7 @@ import sys
 #import smooth_level
 
 import smooth_rf
-
+path = "../"
 
 # input
 # 1: data_set = ["microsoft", "online_news"]
@@ -33,7 +33,8 @@ import smooth_rf
 
 data_set = sys.argv[1]
 if data_set == "online_news":
-    data = pd.read_csv("data/OnlineNewsPopularity/OnlineNewsPopularity.csv")
+    data = pd.read_csv(path +\
+                       "data/OnlineNewsPopularity/OnlineNewsPopularity.csv")
 
     y_all = np.log10(data[" shares"])
     data_all = data.drop(columns = ["url"," timedelta"," shares"])
@@ -72,7 +73,7 @@ elif d == "p":
 else:
     NameError("d needs to be 1 of 2 options")
 
-inner_dist = sys.arv[7]
+inner_dist = sys.argv[7]
 if inner_dist not in ["standard", "max", "min"]:
     NameError("inner_dist, needs to be 1 of 3 options")
 
@@ -240,7 +241,7 @@ def check_rf_grow(n_data, n_large, n_draws,
 
             if style == "level-base":
 
-                smooth_rf = smooth_rf.smooth_all(
+                smooth_rf_level = smooth_rf.smooth_all(
                                     model_fit,
                                     X_trained = data,
                                     y_trained = y.ravel(),
@@ -252,7 +253,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                                     verbose = False)
                 yhat_test_base = model_fit.predict(data_test)
                 score_mat[0,i,j] = scoring(y_test,yhat_test_base)
-                yhat_test = smooth_rf.predict(data_test)
+                yhat_test = smooth_rf_level.predict(data_test)
                 score_mat[1,i,j] = scoring(y_test,yhat_test)
 
             elif style ==  "element-based":
@@ -384,27 +385,34 @@ if create_figs:
 
     if style == "level-base":
 
-        data_vis_depth.to_csv("images/data_vis_depth_"+\
+        data_vis_depth.to_csv(path +\
+                              "images/data_vis_depth_"+\
                                  data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
                                  c_in + "_" +\
                                  style + "_" +\
-                                 "distance-"+ d + ".csv")
+                                 "distance-"+ d +\
+                                 "_tree_depth_dist-"+ inner_dist+\
+                                 ".csv")
 
         save_as_pdf_pages([depth_vis  +\
                            theme(figure_size = (8,6))],
-                          filename = "images/depth_vis_"  +\
+                          filename = path +\
+                                 "images/depth_vis_"  +\
                                  data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
                                  c_in + "_" +\
                                  style + "_" +\
-                                 "distance-"+ d + ".pdf")
+                                 "distance-"+ d +\
+                                 "_tree_depth_dist-"+ inner_dist+\
+                                  ".pdf")
 
     if style == "element-based":
 
-        data_vis_depth.to_csv("images/data_vis_depth_" +\
+        data_vis_depth.to_csv(path +\
+                              "images/data_vis_depth_" +\
                                  data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
@@ -418,13 +426,15 @@ if create_figs:
 
         save_as_pdf_pages([depth_vis  +\
                            theme(figure_size = (8,6))],
-                          filename = "images/depth_vis_" +\
+                          filename = path +\
+                                 "images/depth_vis_" +\
                                  data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
                                  c_in + "_" +\
                                  style + "_" +\
-                                 "distance-"+ d + "_" +\
+                                 "distance-"+ d +\
+                                 "_tree_depth_dist-"+ inner_dist+ "_" +\
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
@@ -434,13 +444,15 @@ if create_figs:
 
         cost_vis, data_vis_cost = cost_vis(c, np.arange(2,50,2))
 
-        data_vis_cost.to_csv("images/data_vis_cost_" +\
+        data_vis_cost.to_csv(path +\
+                                 "images/data_vis_cost_" +\
                                  data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
                                  c_in + "_" +\
                                  style + "_" +\
-                                 "distance-"+ d + "_" +\
+                                 "distance-"+ d +\
+                                 "_tree_depth_dist-"+ inner_dist+ "_" +\
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
@@ -448,13 +460,15 @@ if create_figs:
 
         save_as_pdf_pages([cost_vis +\
                            theme(figure_size = (8,6))],
-                          filename = "images/cost_vis_" +\
+                          filename = path +\
+                                 "images/cost_vis_" +\
                                  data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
                                  c_in + "_" +\
                                  style + "_" +\
-                                 "distance-"+ d + "_" +\
+                                 "distance-"+ d +\
+                                 "_tree_depth_dist-"+ inner_dist+ "_" +\
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\

@@ -631,7 +631,7 @@ def test_decision_path_nodes():
 
 
 
-def smooth(random_forest, X_trained, y_trained, X_tune=None, y_tune=None):
+def smooth_old(random_forest, X_trained, y_trained, X_tune=None, y_tune=None):
     """
     creates a smooth random forest
 
