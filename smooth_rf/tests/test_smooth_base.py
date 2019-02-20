@@ -727,3 +727,200 @@ def test_smooth_regressor():
         assert("error running smoothing_function for a random forest classifier")
 
 
+
+def test_bound_box_tree():
+    """
+    test bound_box_tree function (static and random shape analysis)
+    """
+    # random analysis
+    X_train = np.concatenate(
+        (np.random.normal(loc = (1,2,0), scale = .6, size = (100,3)),
+        np.random.normal(loc = (-1.2, -.5,0), scale = .6, size = (100,3))),
+    axis = 0)
+    y_train = np.concatenate((np.zeros(100, dtype = np.int),
+                             np.ones(100, dtype = np.int)))
+    amount = np.int(200)
+    s = 20
+    c = y_train[:amount]
+    # creating a random forest
+    rf_class_known = sklearn.ensemble.RandomForestClassifier(
+                                                        n_estimators = 3,
+                                                        min_samples_leaf = 1)
+    fit_rf_known = rf_class_known.fit(X = np.array(X_train)[:amount,:],
+                                      y = y_train[:amount].ravel())
+    forest = fit_rf_known.estimators_
+    t = forest[0]
+
+    bb = smooth_rf.bound_box_tree(t, X_train)
+
+    n_node = t.tree_.children_left.shape[0]
+    assert bb.shape == (n_node, X_train.shape[1], 2), \
+        "bounded box shape is not as expected"
+
+    for idx in np.arange(n_node):
+        if t.tree_.children_left[idx] != -1:
+            own_bb = bb[idx,
+                np.arange(bb.shape[1],dtype = np.int) != t.tree_.feature[idx],:]
+            l_bb = bb[t.tree_.children_left[idx],
+                np.arange(bb.shape[1],dtype = np.int) != t.tree_.feature[idx],:]
+            r_bb = bb[t.tree_.children_right[idx],
+                np.arange(bb.shape[1],dtype = np.int) != t.tree_.feature[idx],:]
+
+            assert np.all(own_bb == l_bb) and np.all(own_bb == r_bb), \
+                "children bounding boxes differ more than expected"
+
+
+    # static check
+
+    # tree structure:
+    # ~upper: left, lower: right~.
+    #                   lower   upper       split
+    #    |--1           0,0    50, 100      -1
+    # -0-|.             0,0     100, 100    0
+    #    |   |--3       50,0    100, 50     -1
+    #    |-2-|          50,0    100,100     1
+    #        |   |--5   50,50   75,100      -1
+    #        |-4-|      50,50   100,100     0
+    #            |--6   75,50   100,100     -1
+
+    # creating desired structure
+    class inner_fake_tree():
+        def __init__(self, cl, cr, f, t):
+            self.children_left = cl
+            self.children_right = cr
+            self.feature = f
+            self.threshold = t
+
+    class fake_tree():
+        def __init__(self, cl, cr, f, t):
+            self.tree_ = inner_fake_tree(cl, cr, f, t)
+            self.__class__ = sklearn.tree.tree.DecisionTreeRegressor
+
+    children_right = np.array([2,-1,4,-1,6,-1,-1], dtype = np.int)
+    children_left = np.array([1,-1,3,-1,5,-1,-1], dtype = np.int)
+    feature = np.array([0,-1,1,-1,0,-1,-1],dtype = np.int)
+    threshold = np.array([50,-1,50,-1,75,-1,-1])
+
+
+    test = fake_tree(children_left,children_right,feature,threshold)
+
+    X = np.array([[100,100],
+                  [0, 0]])
+
+    bb_truth = np.array([[[0,100],
+                          [0,100]],
+                         [[0,50],
+                          [0,100]],
+                         [[50,100],
+                          [0,100]],
+                         [[50,100],
+                          [0, 50]],
+                         [[50,100],
+                          [50,100]],
+                         [[50,75],
+                          [50,100]],
+                         [[75,100],
+                          [50,100]]])
+
+    bb_static = smooth_rf.bound_box_tree(test, X)
+
+    assert np.all(bb_truth == bb_static), \
+        "bounding box doesn't replicate expected boxes for static example"
+
+
+def test_center_tree():
+    """
+    test center_tree function (static and random shape analysis)
+    """
+
+    # random analysis
+    X_train = np.concatenate(
+        (np.random.normal(loc = (1,2,0), scale = .6, size = (100,3)),
+        np.random.normal(loc = (-1.2, -.5,0), scale = .6, size = (100,3))),
+    axis = 0)
+    y_train = np.concatenate((np.zeros(100, dtype = np.int),
+                             np.ones(100, dtype = np.int)))
+    amount = np.int(200)
+    s = 20
+    c = y_train[:amount]
+    # creating a random forest
+    rf_class_known = sklearn.ensemble.RandomForestClassifier(
+                                                        n_estimators = 3,
+                                                        min_samples_leaf = 1)
+    fit_rf_known = rf_class_known.fit(X = np.array(X_train)[:amount,:],
+                                      y = y_train[:amount].ravel())
+    forest = fit_rf_known.estimators_
+    t = forest[0]
+
+    cc = smooth_rf.center_tree(t, X_train)
+
+    n_node = t.tree_.children_left.shape[0]
+    assert cc.shape == (n_node, X_train.shape[1]), \
+        "center shape is not as expected"
+
+    for idx in np.arange(n_node):
+        if t.tree_.children_left[idx] != -1:
+            own_cc = cc[idx,
+                np.arange(cc.shape[1],dtype = np.int) != t.tree_.feature[idx]]
+            l_cc = cc[t.tree_.children_left[idx],
+                np.arange(cc.shape[1],dtype = np.int) != t.tree_.feature[idx]]
+            r_cc = cc[t.tree_.children_right[idx],
+                np.arange(cc.shape[1],dtype = np.int) != t.tree_.feature[idx]]
+
+            assert np.all(own_cc == l_cc) and np.all(own_cc == r_cc), \
+                "children centers differ more than expected"
+
+
+    # static check
+
+    # tree structure:
+    # ~upper: left, lower: right~.
+    #                   lower   upper       split
+    #    |--1           0,0    50, 100      -1
+    # -0-|.             0,0     100, 100    0
+    #    |   |--3       50,0    100, 50     -1
+    #    |-2-|          50,0    100,100     1
+    #        |   |--5   50,50   75,100      -1
+    #        |-4-|      50,50   100,100     0
+    #            |--6   75,50   100,100     -1
+
+    # creating desired structure
+    class inner_fake_tree():
+        def __init__(self, cl, cr, f, t):
+            self.children_left = cl
+            self.children_right = cr
+            self.feature = f
+            self.threshold = t
+
+    class fake_tree():
+        def __init__(self, cl, cr, f, t):
+            self.tree_ = inner_fake_tree(cl, cr, f, t)
+            self.__class__ = sklearn.tree.tree.DecisionTreeRegressor
+
+    children_right = np.array([2,-1,4,-1,6,-1,-1], dtype = np.int)
+    children_left = np.array([1,-1,3,-1,5,-1,-1], dtype = np.int)
+    feature = np.array([0,-1,1,-1,0,-1,-1],dtype = np.int)
+    threshold = np.array([50,-1,50,-1,75,-1,-1])
+
+
+    test = fake_tree(children_left,children_right,feature,threshold)
+
+    X = np.array([[100,100],
+                  [0, 0]])
+
+    bb_truth = np.array([[[0,0],[100,100]],
+                       [[0,0],[50,100]],
+                       [[50,0],[100,100]],
+                       [[50,0],[100,50]],
+                       [[50,50],[100,100]],
+                       [[50,50],[75,100]],
+                       [[75,50],[100,100]]])
+
+    cc_truth = bb_truth.mean(axis = 1)
+
+    cc_static = smooth_rf.center_tree(test, X)
+
+    assert np.all(cc_truth == cc_static), \
+        "centers doesn't replicate expected boxes for static example"
+
+

@@ -608,8 +608,6 @@ def smooth_regression_old(random_forest, X_trained=None, y_trained=None,
     #eps = 1/n_obs_trained
     #numeric_eps = 1e-5
 
-
-
     if (X_tune is None or y_tune is None) and not resample_tune:
         oob_logic = True
     else:
@@ -704,8 +702,6 @@ def smooth_regression_old(random_forest, X_trained=None, y_trained=None,
         np.random.seed(initial_lamb_seed)
         lamb = np.random.uniform(size = Gamma.shape[1])
         lamb = lamb / lamb.sum()
-
-
 
     if all_trees:
         n = t_idx_vec.shape
@@ -821,10 +817,17 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
     Returns:
     --------
-    an updated RandomForestClassifier or RandomForestRegressor object with
-    values for each node altered (depending on "sanity_check")
-
-    `return inner_rf, inner_rf2, lamb_last, c`
+    inner_rf : RandomForestClassifier or RandomForestRegressor
+        updated smoothed random forest with optional lambda weighting, also has
+        a .lamb parameter that stores weighting
+    inner_rf2 : RandomForestClassifier or RandomForestRegressor
+        updated smoothed random forest with lambda weighting from the final
+        step of the stocastic gradient descent, also has a.lamb parameter that
+        stores weighting
+    lamb_last : numpy array
+        last lambda value selected from the stocastic gradient descent
+    c : list
+        list of cost value for each stocastic gradient descent
 
     Comments:
     ---------
@@ -832,11 +835,6 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     If X_tune and/or y_tune is None then we will optimize each tree with oob
     samples.
     """
-
-    #n_obs_trained = X_trained.shape[0]
-    #eps = 1/n_obs_trained
-    #numeric_eps = 1e-5
-
 
     if type(random_forest) is sklearn.ensemble.RandomForestClassifier:
         rf_type = "class"
@@ -861,7 +859,7 @@ def smooth(random_forest, X_trained=None, y_trained=None,
                         "parameters.")
 
     if oob_logic or resample_tune:
-            n_obs_trained = X_trained.shape[0]
+        n_obs_trained = X_trained.shape[0]
 
     inner_rf = copy.deepcopy(random_forest)
     inner_rf2 = copy.deepcopy(random_forest)
@@ -897,8 +895,7 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
         num_leaf = np.sum(tree.children_left == -1)
 
-        # node associated
-        # hmmm - to grab the OOB we could do:
+        # to grab the OOB:
         # _generate_sample_indices
         # from https://github.com/scikit-learn/scikit-learn/blob/bac89c253b35a8f1a3827389fbee0f5bebcbc985/sklearn/ensemble/forest.py#L78
         # just need to grab the tree's random state (t.random_state)
@@ -960,8 +957,6 @@ def smooth(random_forest, X_trained=None, y_trained=None,
         lamb = np.random.uniform(size = Gamma.shape[-1])
         lamb = lamb / lamb.sum()
 
-
-
     if all_trees:
         n = t_idx_vec.shape
         t_idx_vec = np.zeros(n, dtype = np.int)
@@ -994,10 +989,11 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     # to avoid divide by 0 errors (this may be a problem relative to the
     #   observed values)
 
+
     eta_fill = (eta @ lamb)
     eta_fill[eta_fill == 0] = 1
-    y_leaf_new_all = (Gamma @ lamb_last) / eta_fill
-    y_leaf_new_all[(eta @ lamb_last) == 0] = 0
+    y_leaf_new_all = (Gamma @ lamb) / eta_fill
+    y_leaf_new_all[(eta @ lamb) == 0] = 0
 
     eta_fill2 = (eta @ lamb_last)
     eta_fill2[eta_fill2 == 0] = 1
@@ -1381,6 +1377,197 @@ def generate_data_knn(n = 650, p = np.array([.4,.6])):
   return new, y, value
 
 
+#### generating spiral function
+
+def spirals(n_total = 600, n_classes = 3, noise_sd = .1, t_shift = 0):
+    """
+    create spirals dataset
+
+    Arguments:
+    ----------
+    n_total: int
+        total number of observations (up to rounding - all classes get the
+        same number of observations)
+    n_classes: int
+        number of classes
+    noise_sd: scalar
+        standard deviation of student t noise added in (x,y) dimension
+    t_shift: scalar
+        shifts start of t from 0 to t_shift
+        (so that classes don't connect at center)
+
+    Returns
+    -------
+    data_all: pd dataframe, with columns: t, x, y, class (class is the label)
+    """
+    shifts = np.linspace(0, 2*np.pi, num = n_classes, endpoint = False)
+    n_each = np.int(n_total/n_classes)
+
+
+    data_all = pd.DataFrame()
+
+    for c_idx, shift in enumerate(shifts):
+        tt =  np.random.uniform(low = 0, high = 2*np.pi, size = n_each) +\
+            shift + t_shift
+        #np.linspace(0, 2*np.pi, num = n_each) + shift + t_shift
+        inner_data = pd.DataFrame(
+                        data = {"t": tt,
+                                "x": np.sqrt(tt - shift) * np.cos(tt) +\
+                                    # np.random.normal(size = n_each,
+                                    #                 scale = noise_sd),
+                                    noise_sd *\
+                                        np.random.standard_t(df = 1,
+                                                             size = n_each),
+                                "y": np.sqrt(tt - shift) * np.sin(tt)+\
+                                    # np.random.normal(size = n_each,
+                                    #                  scale = noise_sd),
+                                    noise_sd *\
+                                        np.random.standard_t(df = 1,
+                                                             size = n_each),
+                                "class": c_idx
+                                })
+
+        data_all = data_all.append(inner_data)
+
+    return data_all
+
+
+#### Calculating center of nodes
+
+def bound_box_tree(tree, X):
+    """
+    calculate bounding box (min/max for each variable) of each node/split of a
+    tree
+
+    Arguments:
+    ----------
+    tree : sklearn style binary decision tree (split on features)
+        tree to calculate the bounding boxes on
+    X : array (n_obs, n_col)
+        data used to train the tree To initialize the bounding box
+
+    Returns:
+    --------
+    storage_bound_box : array (n_node, n_col, 2)
+        array that storages bounding box for each node - min and max for each
+        features
+    """
+    n_nodes = tree.tree_.children_left.shape[0]
+    n_col = X.shape[1]
+
+
+    storage_bound_box = np.zeros((n_nodes, n_col, 2))
+    storage_bound_box[0] = np.array([np.min(X, axis = 0),
+                                     np.max(X, axis = 0)]).T
+
+    _bound_box_tree(storage_bound_box, tree, idx = 0)
+
+    return storage_bound_box # if we update the actual object...
+
+def _bound_box_tree(storage_bound_box, tree, idx):
+    """
+    inner function for calculating a bounding box (min/max for each variable)
+    of each node/split of a tree
+
+    Arguments:
+    ----------
+
+    tree : sklearn style binary decision tree (split on features)
+        tree to calculate the bounding boxes on
+    idx : int
+        integer associated with the idx for the current node you are looking at
+
+    Returns:
+    --------
+    None, updates the storage_bound_box as defined in *details*
+
+    Details:
+    --------
+    Updates the storage_bound_box for the children nodes of node relatived to
+    provided idx, where storage_bound_box is defined as follows:
+
+    storage_bound_box : array (n_node, n_col, 2)
+        array that storages bounding box for each node - min and max for each
+        features
+    """
+    if tree.tree_.children_left[idx] == -1: # leaf
+        return None
+
+    split_feature = tree.tree_.feature[idx]
+    split_threshold = tree.tree_.threshold[idx]
+
+    idx_left = tree.tree_.children_left[idx]
+    idx_right = tree.tree_.children_right[idx]
+
+
+    # obs_value <= threshold  for left
+    # https://scikit-learn.org/stable/auto_examples/tree/plot_unveil_tree_structure.html
+
+    # left child
+    storage_bound_box[idx_left] = storage_bound_box[idx].copy()
+    storage_bound_box[idx_left, split_feature, 1] = split_threshold
+    _bound_box_tree(storage_bound_box, tree, idx_left)
+
+    # right child
+    storage_bound_box[idx_right] = storage_bound_box[idx].copy()
+    storage_bound_box[idx_right, split_feature, 0] = split_threshold
+    _bound_box_tree(storage_bound_box, tree, idx_right)
+
+    return None
+
+def center_tree(tree, X):
+    """
+    Calculates the center of each node of a decision tree
+
+    Arguments:
+    ----------
+    tree : sklearn style binary decision tree (split on features)
+        tree to calculate the centers on
+    X : array (n_obs, n_col)
+        data used to train the tree to initialize the centers
+
+    Returns:
+    --------
+    storage : array (n_node, n_col)
+        array that storages center for each node for each feature
+    """
+    tree_box = bound_box_tree(tree, X)
+
+    return tree_box.mean(axis = 2)
+
+
+def center_forest(forest, X):
+    """
+    Calculates the center of each node of a decision tree
+
+    Arguments:
+    ----------
+    forest : list of sklearn style binary decision trees (split on features).
+            think random_forest.estimators_
+        list of trees to calculate the centers on.
+    X : array (n_obs, n_col)
+        data used to train the tree to initialize the centers
+
+    Returns:
+    --------
+    mean_all : array (total_nodes, n_col)
+        array that storages center for each node for each feature, stacking
+        relative to trees
+    t_idx_all : array (total_nodes)
+        vector that storage the index of which tree the node belongs to
+    """
+    n_col = X.shape[1]
+
+    mean_all = np.zeros((0,n_col))
+    t_idx_all = np.zeros((0,))
+
+    for t_idx, t in enumerate(forest):
+        inner_mean = center_tree(t, X)
+        mean_all = np.concatenate((mean_all, inner_mean), axis = 0)
+        t_idx_all = np.concatenate((t_idx_all,
+                                    [t_idx]*inner_mean.shape[0]))
+
+    return mean_all, t_idx_all
 
 
 

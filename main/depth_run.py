@@ -17,7 +17,7 @@ import smooth_rf
 path = "../"
 
 # input
-# 1: data_set = ["microsoft", "online_news"]
+# 1: data_set = ["microsoft", "online_news", "splice"]
 # 2: num_trees = [1, 10, 300] (integer)
 # 3: tuning = ["resample", "oob", "oracle"]
 # 4: constrained = ["c","nc"]
@@ -39,6 +39,25 @@ if data_set == "online_news":
     y_all = np.log10(data[" shares"])
     data_all = data.drop(columns = ["url"," timedelta"," shares"])
     data_all = np.array(data_all)
+elif data_set == "splice":
+    data_train = pd.read_csv(path + "data/splice/splice.data.txt", header = -1,
+                             names = ["class","names", "genes"])
+    data_train = data_train.drop(columns = ["names"])
+
+    def cleanup(gene_string):
+        g = gene_string.replace(" ", "")
+        g = str([x for x in g])
+        g = g.replace("]","")
+        g = g.replace("[","")
+        g = g.replace("'","")
+        return g
+
+    gene_expand_df = data_train["genes"].apply(cleanup).str.split(", ", expand=True)
+
+    gene_expand_df_dummy = pd.get_dummies(gene_expand_df)
+
+    y_all = pd.factorize(data_train["class"])
+    data_all = gene_expand_df_dummy
 else:
     y_all = None
     data_all = None
@@ -118,7 +137,7 @@ def get_random_seed():
 def check_rf_grow(n_data, n_large, n_draws,
                reg_or_class="reg", depth_range=np.arange(1,50),
                verbose = True, ntree=1,
-               data_set = ["microsoft", "knn", "online_news"],
+               data_set = ["microsoft", "knn", "online_news", "splice"],
                tuning = ["resample", "oob", "oracle"],
                constrained = True,
                style = ["level-base", "element-based"],
@@ -208,7 +227,7 @@ def check_rf_grow(n_data, n_large, n_draws,
     for i, max_depth in depth_iter:
         for j in np.arange(n_draws):
 
-            if data_set == "online_news":
+            if data_set == "online_news" or data_set == "splice":
                 data, data_test, y, y_test = \
                     sklearn.model_selection.train_test_split(data_all,
                                                              y_all,
@@ -278,7 +297,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                 score_mat[0,i,j] = scoring(y_test,yhat_test_base)
                 yhat_test_opt = smooth_rf_opt.predict(data_test)
                 score_mat[1,i,j] = scoring(y_test,yhat_test_opt)
-                yhat_test_last = smooth_rf_opt.predict(data_test)
+                yhat_test_last = smooth_rf_last.predict(data_test)
                 score_mat[2,i,j] = scoring(y_test,yhat_test_last)
 
     return score_mat, c_mat
@@ -293,6 +312,9 @@ def depth_error_vis(cv_mat, idx_range=None):
         averagable and that one can find it's variance)
     """
 
+
+    n_sim = cv_mat.shape[1]
+
     if idx_range is None:
         idx_range = np.arange(cv_mat.shape[1])
 
@@ -303,8 +325,8 @@ def depth_error_vis(cv_mat, idx_range=None):
         sd = cv_mat_inner.std(axis = 1)
 
         data_vis_inner = pd.DataFrame(data = {"mu": mu,
-                                        "lower": mu + sd,
-                                        "upper": mu - sd,
+                                        "lower": mu + sd/np.sqrt(n_sim),
+                                        "upper": mu - sd/np.sqrt(n_sim),
                                         "idx range": idx_range,
                                         "model name": str(m_idx)})
 
