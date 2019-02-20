@@ -57,8 +57,8 @@ elif data_set == "splice":
 
     gene_expand_df_dummy = pd.get_dummies(gene_expand_df)
 
-    y_all = pd.factorize(data_train["class"])
-    data_all = gene_expand_df_dummy
+    y_all = pd.factorize(data_train["class"])[0]
+    data_all = np.array(gene_expand_df_dummy)
     reg_or_class = "class"
 else:
     reg_or_class = 'reg'
@@ -188,7 +188,7 @@ def check_rf_grow(n_data, n_large, n_draws,
         data_generator = lambda large_n: smooth_rf.generate_data_knn(
                                                      n=large_n,
                                                      p=np.array([.3,.7]))
-    elif data_set == "online_news":
+    elif data_set == "online_news" or data_set == "splice":
         if tuning == "oracle":
             NameError("tuning cannot be oracle for the online_news dataset")
         if data_all is None or y_all is None:
@@ -279,7 +279,6 @@ def check_rf_grow(n_data, n_large, n_draws,
                 score_mat[1,i,j] = scoring(y_test,yhat_test)
 
             elif style ==  "element-based":
-
                 smooth_rf_opt, smooth_rf_last ,_, c = smooth_rf.smooth(
                                 model_fit,
                                 X_trained = data,
@@ -390,7 +389,7 @@ if create_figs:
            n_data=650,
            n_large=10000,
            n_draws=20,
-           reg_or_class=reg_or_class
+           reg_or_class=reg_or_class,
            depth_range=np.arange(2,50,2),
            verbose=True,
            ntree=num_trees,

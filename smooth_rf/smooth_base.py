@@ -835,7 +835,6 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     If X_tune and/or y_tune is None then we will optimize each tree with oob
     samples.
     """
-
     if type(random_forest) is sklearn.ensemble.RandomForestClassifier:
         rf_type = "class"
     elif type(random_forest) is sklearn.ensemble.RandomForestRegressor:
