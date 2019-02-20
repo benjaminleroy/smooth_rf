@@ -442,7 +442,7 @@ if create_figs:
                                  tuning + "_" +\
                                  c_in + "_" +\
                                  style + "_" +\
-                                 "distance-"+ d + +\
+                                 "distance-"+ d +\
                                  "_tree_depth_dist-"+ inner_dist+ "_" +\
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
