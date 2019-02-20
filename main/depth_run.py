@@ -39,6 +39,7 @@ if data_set == "online_news":
     y_all = np.log10(data[" shares"])
     data_all = data.drop(columns = ["url"," timedelta"," shares"])
     data_all = np.array(data_all)
+    reg_or_class = "reg"
 elif data_set == "splice":
     data_train = pd.read_csv(path + "data/splice/splice.data.txt", header = -1,
                              names = ["class","names", "genes"])
@@ -58,7 +59,9 @@ elif data_set == "splice":
 
     y_all = pd.factorize(data_train["class"])
     data_all = gene_expand_df_dummy
+    reg_or_class = "class"
 else:
+    reg_or_class = 'reg'
     y_all = None
     data_all = None
 
@@ -387,7 +390,7 @@ if create_figs:
            n_data=650,
            n_large=10000,
            n_draws=20,
-           reg_or_class="reg",
+           reg_or_class=reg_or_class
            depth_range=np.arange(2,50,2),
            verbose=True,
            ntree=num_trees,
