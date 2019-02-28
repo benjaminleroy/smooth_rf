@@ -14,7 +14,8 @@ setup(name='smoothrf',
       license='MIT',
       packages=['smooth_rf'],
       install_requires=[
-          'numpy', 'sparse', 'scipy', "sklearn"
+          'numpy', 'sparse', 'scipy', 'sklearn',
+          'progressbar2'
       ],
       test_suite='nose.collector',
       test_require=['nose'],
