@@ -15,7 +15,7 @@ setup(name='smooth_rf',
       packages=['smooth_rf'],
       install_requires=[
           'numpy', 'sparse', 'scipy', 'sklearn',
-          'setuptools>=18.0', 'Cython', 'cython', 'quadprog',  # used for smooth_level (remove in the future)
+          'quadprog',  # used for smooth_level (remove in the future)
           'progressbar2', 'matplotlib' # this line is less "needed"
       ],
       test_suite='nose.collector',
