@@ -4,7 +4,7 @@ def readme():
     with open('README.rst') as f:
         return f.read()
 
-setup(name='smoothrf',
+setup(name='smooth_rf',
       version='0.1',
       description='Smoothing Random Forests',
       long_description = readme(),
@@ -15,7 +15,7 @@ setup(name='smoothrf',
       packages=['smooth_rf'],
       install_requires=[
           'numpy', 'sparse', 'scipy', 'sklearn',
-          'quadprog', # used for smooth_level (remove in the future)
+          'quadprog', "Cython", # used for smooth_level (remove in the future)
           'progressbar2', 'matplotlib' # this line is less "needed"
       ],
       test_suite='nose.collector',
