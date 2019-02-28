@@ -144,6 +144,65 @@ def prox_project(y):
 
     return y_prox
 
+def prox_project_ce(y, class_eps = 1e-4):
+    """
+    Approximate projection function onto the space defined by
+    {x:x_i >= (class_eps / n)/(class_eps + 1), sum_i x_i =1}_i=1^n.
+
+    This spaces is desireable for the cross-entropy loss and derivative (which
+    includes log(x) or 1/x for an x that could be zero without such weighting).
+
+    Arguments:
+    ----------
+    y : array (n, )
+        array vector to be projected into the above space
+    class_eps : scalar
+        positive scalar (much smaller than 1) that adds small positive value
+        to all entries in returned array
+        ( value added is actually = (class_eps/n)/(1+class_eps) )
+    Returns:
+    --------
+    y_prox : array (n, )
+        y projected into the above space
+    Notes:
+    ------
+    This algorithm comes from
+    - https://arxiv.org/pdf/1101.6081.pdf
+    - https://www.mathworks.com/matlabcentral/fileexchange/30332-projection-onto-simplex
+
+    The algorithm (from the above paper) provides the projection to
+    {x:x_i >= 0, sum_i x_i =1}_i=1^n, we provide a non-mathematically sound
+    "correction" to the returned value that does get it in the desired space
+    but doesn't necessarily get it to the most correct location.  If class_eps
+    is small, it should be close geometrically.
+
+    """
+    m = y.shape[0]
+    bget = False
+
+    s = np.sort(y)[::-1]
+    tmpsum = 0
+
+    for idx in np.arange(m-1):
+        tmpsum = tmpsum + s[idx]
+        tmax = (tmpsum -1)/(idx + 1)
+
+        if tmax >= s[idx + 1]:
+            bget = True
+            break
+
+    if not bget:
+        tmax = (tmpsum + s[m-1] - 1)/m
+
+    y_prox = (y-tmax)*(y-tmax > 0)
+
+    # update for cross-entropy
+    y_prox = y_prox + np.ones(y_prox.shape[0]) * class_eps / y_prox.shape[0]
+    y_prox = y_prox / y_prox.sum()
+    y_prox = y_prox / y_prox.sum() # for some reason - needs to be done twice
+
+    return y_prox
+
 # start of new code ---------------
 
 def create_decision_per_leafs(tree):
@@ -524,10 +583,92 @@ def take_gradient(y, Gamma, eta, weights, lamb):
 
     return grad
 
+def take_gradient_ce(p, Gamma, eta, weights, lamb):
+    """
+    Calculates gradient of cross entropy
+    where
+
+    phat_ld = sum_k lam_k sum_j II(D_ij = k) n_j p_jd
+             ----------------------------------------
+              sum_k lam_k sum_j II(D_ij = k) n_j
+
+    all elements' class structure is unraveled
+
+    Arguments:
+    ----------
+    p : array (m*d,)
+        true y-values (the average) per node of the tree
+    Gamma : array (m*d, k)
+        a matrix (rows for leafs, columns for depth) where each value
+
+        Gamma[i,k]  = sum_l II(D_il = k) n_l p_ld
+
+        (i.e. sum of training observations p values for those obs with tree
+        dist k away from new node i, class d)
+    eta : array (m, k)
+        a matrix (rows for leafs, columns for depth) where each value
+
+        eta[i,k]  = sum_l II(D_il = k) n_l
+
+        (i.e. the total number of training observations that are tree dist k
+        away from the new node i)
+    weights : array (m,)
+        weights associated with node i. For our analysis this weight = number
+        of observations in the ith node
+    lamb : array (k,)
+        weights associated with how important different distance away from the
+        true node should effect the prediction
+    """
+    Gamma_fill = Gamma @ lamb
+    eta_fill = eta @ lamb
+    eta_fill2 = eta_fill
+    eta_fill2[eta_fill == 0] = 1 # to avoid divide by 0.
+    phat = Gamma_fill / eta_fill2
+
+    assert np.any(eta_fill2 != 0), \
+        "some eta * lamb are zero - which doesn't make sense - "+\
+        "try all positive lamb" +\
+        "\n Ben: this may happen now - when using global structure"
+
+    left_npp = -weights*p / phat
+    right_crazy = (Gamma.T @ np.diag(eta_fill) - eta.T @ np.diag(Gamma_fill)) \
+                    / (eta_fill)**2
+
+    grad = right_crazy @ left_npp
+    return grad
+
 
 def calc_cost(y, Gamma, eta, weights, lamb):
     """
-    l2 cost
+    calculates weighted l2 loss function
+
+    Loss = sum_i^n w_i*|y_i - hat{y_i}|^2
+
+    where
+
+    hat{y} = Gamma @ lamb
+             ------------
+              eta @ lamb
+
+    Arguments:
+    ----------
+    y : array (n, )
+        mean value of leaf node (from test set)
+    Gamma : array (n, k)
+        Gamma matrix (sum_j n_j * bar{p}_j from training set for all
+        leaf nodes at most k distance away for current leaf node.)
+    eta : array (n, k)
+        eta matrix (sum_j n_j  from training set for all
+        leaf nodes at most k distance away for current leaf node.)
+    weights : array (n,)
+        weights array (number of observations in leaf from testing set)
+    lamb : array (k,)
+        weights relative to distance away for prediction node
+
+    Return:
+    -------
+    loss : scalar
+        weighted l2 loss
     """
     Gamma_fill = Gamma @ lamb
     eta_fill = eta @ lamb
@@ -536,6 +677,50 @@ def calc_cost(y, Gamma, eta, weights, lamb):
 
     return np.sum( (residuals**2) * weights)
 
+def calc_cost_ce(p, Gamma, eta, weights, lamb):
+    """
+    calculates weighted cross-entropy loss
+
+    Loss = - sum_{l=1}^{# leaves} n_l sum_{d=1}^D p_{ld} log(hat{p}_{ld})
+
+    where
+
+    hat{p} = Gamma @ lamb
+             ------------
+              eta @ lamb
+
+    Arguments:
+    ----------
+    p : array (l*d,)
+        raveled probability vector
+    Gamma : array (l*d, k)
+        raveled Gamma matrix (sum_j n_j * bar{p}_j from training set for all
+        leaf nodes at most k distance away for current leaf node.)
+    eta : array (l*d, k)
+        raveled eta matrix (sum_j n_j  from training set for all
+        leaf nodes at most k distance away for current leaf node.)
+    weights : array (l*d,)
+        raveled weights array (number of observations in leaf from testing
+        set)
+    lamb : array (k,)
+        weights relative to distance away for prediction node
+
+    Return:
+    -------
+    loss : scalar
+        weighted cross-entropy loss
+
+    Notes:
+    ------
+    We expect all objects (except lamb) to be raveled version, with raveling
+    done across # of classes dimensions.
+    """
+    Gamma_fill = Gamma @ lamb
+    eta_fill = eta @ lamb
+    eta_fill[eta_fill == 0] = 1 # to avoid divide by 0.
+    p_hat = Gamma_fill / eta_fill
+
+    return - np.sum(weights * p * np.log(p_hat))
 
 def smooth_regression_old(random_forest, X_trained=None, y_trained=None,
                X_tune=None, y_tune=None, verbose=True,
@@ -765,7 +950,9 @@ def smooth(random_forest, X_trained=None, y_trained=None,
                all_trees=False,
                initial_lamb_seed=None,
                parents_all=False,
-               distance_style=["standard","max", "min"]):
+               distance_style=["standard","max", "min"],
+               class_eps=1e-4,
+               class_loss=["ce","l2"]):
     """
     creates a smooth random forest (1 lambda set across all trees)
 
@@ -775,7 +962,7 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     ----
     random_forest : sklearn forest
             (sklearn.ensemble.forest.RandomForestRegressor or
-             sklearn.ensemble.forest.RandomForestClassifier)
+            sklearn.ensemble.forest.RandomForestClassifier)
         pre-trained classification or regression based random forest
     X_trained : array (n, p)
         X data array used to create the inputted random_forest. Note that this
@@ -811,9 +998,17 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     parents_all : bool
         logic to instead include all observations with parent of distance k
         away
-   distance_style : string
+    distance_style : string
         style of inner-tree distance to use, see *details* in the
         create_distance_mat_leaves doc-string.
+    class_eps : scalar (default 1e-4)
+        For classification modles only. This scalar value makes it such that
+        we keep the lamb values stay in the space defined by
+        {x:x_i >= (class_eps / n)/(class_eps + 1), sum_i x_i =1}_i=1^n. This
+        is done to not let the cross-entropy loss or it's derivative explode.
+    class_loss : str (default = "ce")
+        loss function for classification regression. Either "l2" for l2 loss or
+        "ce" for cross-entropy loss.
 
     Returns:
     --------
@@ -844,7 +1039,6 @@ def smooth(random_forest, X_trained=None, y_trained=None,
                    "sklearn.ensemble.RandomForestClassifier " +\
                    "or a sklearn.ensemble.RandomForestRegressor")
 
-
     if (X_tune is None or y_tune is None) and not resample_tune:
         oob_logic = True
     else:
@@ -859,6 +1053,10 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
     if oob_logic or resample_tune:
         n_obs_trained = X_trained.shape[0]
+
+    if type(class_loss) == list:
+        class_loss = class_loss[0]
+
 
     inner_rf = copy.deepcopy(random_forest)
     inner_rf2 = copy.deepcopy(random_forest)
@@ -956,6 +1154,11 @@ def smooth(random_forest, X_trained=None, y_trained=None,
         lamb = np.random.uniform(size = Gamma.shape[-1])
         lamb = lamb / lamb.sum()
 
+    if rf_type == "class": # to avoid initial problems in cross-entropy loss
+        lamb = lamb + np.ones(lamb.shape[0]) * class_eps / lamb.shape[0]
+        lamb = lamb / lamb.sum()
+        lamb = lamb / lamb.sum() # need to do twice...
+
     if all_trees:
         n = t_idx_vec.shape
         t_idx_vec = np.zeros(n, dtype = np.int)
@@ -974,13 +1177,26 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
 
     if not sanity_check:
-        lamb,lamb_last,c = subgrad_descent(y_all, weight_all,
+        if rf_type == "reg" or class_loss == "l2":
+            lamb,lamb_last,c = subgrad_descent(y_all, weight_all,
                                Gamma, eta, t_idx_vec,
                                lamb_init=lamb, # no change
                                t_fix=subgrad_t_fix,
                                num_steps=subgrad_max_num,
                                constrained=not no_constraint,
                                verbose=verbose)
+        else:
+            lamb,lamb_last,c = subgrad_descent_ce(y_all, weight_all,
+                               Gamma, eta, t_idx_vec,
+                               lamb_init=lamb,
+                               t_fix=subgrad_t_fix,
+                               num_steps=subgrad_max_num,
+                               constrained=not no_constraint,
+                               verbose=verbose,
+                               class_eps=class_eps)
+    else:
+        lamb_last = lamb
+        c = []
 
     #---
     # update random forest object (correct estimates from new lambda)
@@ -1000,8 +1216,11 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     y_leaf_new_all2[(eta @ lamb_last) == 0] = 0
 
     if rf_type == "class":
-        y_leaf_new_all = y_leaf_new_all.reshape((-1,num_classes))
-        y_leaf_new_all2 = y_leaf_new_all2.reshape((-1,num_classes))
+        y_leaf_new_all = y_leaf_new_all.reshape((-1,num_classes),
+                                                order = "F")
+                                                # ^order by column, no row
+        y_leaf_new_all2 = y_leaf_new_all2.reshape((-1,num_classes),
+                                                  order = "F")
 
     start_idx = 0
     for t in forest:
@@ -1148,6 +1367,120 @@ def subgrad_descent(y_leaf, weights_leaf,
     return lamb_best, lamb, cost_all
 
 
+
+def subgrad_descent_ce(p_leaf, weights_leaf,
+                    Gamma, eta, tree_idx_vec,
+                    lamb_init, t_fix=1, num_steps=1000,
+                    constrained=True, verbose=True,
+                    class_eps = 1e-4):
+    """
+    Preform subgradient descent to minimize the cross-entropy defined by
+
+    Loss = \sum_{l=1}^{# leaves} n_l \sum_{d=1}^D p_{ld} log(\hat{p}_{ld})
+
+    The subgradient steps randomly select a tree for each step to estimate the
+    gradient with.
+
+
+    Arguments:
+    ----------
+    p_leaf : array (Tn*d,)
+        average y values for each leaf (observed values)
+    weight_leaf : array (Tn*d,)
+        number of observations observed at certain leaf
+    Gamma : array (Tn*d, K)
+        A horizontal stacking of Gamma matrices as defined above for all trees
+        in the forest. See details below
+    eta : array (Tn*d, K)
+        A horizontal stacking of eta matrices as defined above for all trees
+        in the forest.
+    tree_idx_vec : int array (Tn,)
+        integer array will holds which tree in the forest the associated row
+        of Gamma or eta comes from
+    lamb_init : array (K,)
+        inital lambda value
+    t_fix : scalar
+        value for fixed t step size for gradient descent (default 1)
+    num_steps : int
+        number of steps for stocastic gradient descent to take (default 1000)
+    constrained : bool
+        logic for if the space for lamb values is constrainted onto the simplex
+    verbose : bool
+        logic to show steps of subgradient descent
+    class_eps : scalar (default 1e-4)
+        scalar value such that the lamb values stay in the space defined by
+        {x:x_i >= (class_eps / n)/(class_eps + 1), sum_i x_i =1}_i=1^n. This
+        is done to not let the cross-entropy loss or it's derivative explode.
+
+    Returns:
+    --------
+    lamb : array (K,)
+        optimial lambda value
+
+    Details:
+    --------
+    *Gamma* and *eta*
+    Gamma and eta matrices are from a forest (aka set of trees, where
+    these two matrices are defined (per tree):
+
+    Gamma_il = sum_j II(D_ij = l) n_j y_j
+    eta_il = sum_j II(D_ij = l) n_j
+
+    where n_j, y_j are the number of observations in leaf j and the predicted
+    value associated with with leaf j. Note that D_ij is the tree based
+    distance between leaf i and j.
+
+    Tn is the number of trees, d is number of class labels, K is the length of
+    lambda
+    """
+    if Gamma.shape[1] != lamb_init.shape[0]:
+        raise TypeError("lamb_init needs to be the same length as the "+\
+                        "number of columns in Gamma and eta")
+    if constrained and (np.sum(lamb_init)!=1 or np.any(lamb_init < 0)):
+        raise TypeError("For simplicity please initialize lamb_init with "+\
+                        "a feasible value \n(ex: np.ones(Gamma.shape[1])/"+\
+                        "Gamma.shape[1] )")
+
+    if verbose:
+        bar = progressbar.ProgressBar()
+        first_iter = bar(np.arange(num_steps))
+    else:
+        first_iter = range(num_steps)
+
+    lamb = lamb_init
+
+    lamb_best = lamb
+    cost_best = calc_cost_ce(p_leaf, Gamma, eta, weights_leaf, lamb)
+
+    num_trees = np.int(np.max(tree_idx_vec) + 1)
+
+    cost_all = [cost_best]
+
+    for s_step in first_iter:
+        # select tree idx
+        tree_idx = np.random.choice(num_trees)
+
+        p_inner = p_leaf[tree_idx_vec == tree_idx]
+        weights_inner = weights_leaf[tree_idx_vec == tree_idx]
+        Gamma_inner = Gamma[tree_idx_vec == tree_idx,:]
+        eta_inner = eta[tree_idx_vec == tree_idx,:]
+
+        grad = take_gradient_ce(p_inner, Gamma_inner, eta_inner,
+                             weights_inner, lamb)
+
+        lamb = lamb - t_fix * grad
+
+        if constrained:
+           lamb = prox_project_ce(lamb, class_eps)
+        cost_new = calc_cost_ce(p_leaf, Gamma, eta, weights_leaf, lamb)
+
+        if cost_new < cost_best:
+            cost_best = cost_new
+            lamb_best = lamb
+
+        cost_all = cost_all + [cost_new]
+
+    return lamb_best, lamb, cost_all
 
 
 
