@@ -4,6 +4,6 @@ python:
 
 install:
   - pip install .
-
+  - pip install -r test_requirements.txt
 # run tests
 script: nosetests
