@@ -28,6 +28,7 @@ import sklearn.ensemble
 import sklearn
 import pdb
 
+import smooth_rf.adam_sgd as adam_sgd
 ##################################
 # Base Tree and Forest Structure #
 ##################################
@@ -637,6 +638,96 @@ def take_gradient_ce(p, Gamma, eta, weights, lamb):
     return grad
 
 
+
+def l2_s_grad_for_adam_wrapper(y, Gamma, eta, weights):
+    """
+    Stocastic gradient for l2 loss to be inserted into adam_step
+
+    The inner function calculates gradient of l2 norm for y-yhat (|y-yhat|^2_2)
+    where
+
+    yhat_l = sum_k lam_k sum_j II(D_ij = k) n_j y_j
+            ----------------------------------------
+             sum_k lam_k sum_j II(D_ij = k) n_j
+
+    Arguments:
+    ----------
+    y : array (m,)
+        true y-values (the average) per node of the tree
+    Gamma : array (m, k)
+        a matrix (rows for leafs, columns for depth) where each value
+
+        Gamma[i,k]  = sum_l II(D_il = k) n_l y_l
+
+        (i.e. sum of training observations y values for those obs with tree
+        dist k away from new node i)
+    eta : array (m, k)
+        a matrix (rows for leafs, columns for depth) where each value
+
+        eta[i,k]  = sum_l II(D_il = k) n_l
+
+        (i.e. the total number of training observations that are tree dist k
+        away from the new node i)
+    weights : array (m,)
+        weights associated with node i. For our analysis this weight = number
+        of observations in the ith node
+
+    Returns
+    -------
+    l2_sg_adam : lambda function
+        lambda function of take_gradient function whos only is input is lamb
+    """
+
+    l2_sg_adam = lambda lamb: take_gradient(y, Gamma, eta, weights, lamb)
+
+    return l2_sg_adam
+
+def ce_s_grad_for_adam_wrapper(p, Gamma, eta, weights):
+    """
+    Stocastic gradient for ce loss to be inserted into adam_step
+
+    The inner function calculates the gradient of cross entropy
+    where
+
+    phat_ld = sum_k lam_k sum_j II(D_ij = k) n_j p_jd
+             ----------------------------------------
+              sum_k lam_k sum_j II(D_ij = k) n_j
+
+    all elements' class structure is unraveled
+
+    Arguments:
+    ----------
+    p : array (m*d,)
+        true y-values (the average) per node of the tree
+    Gamma : array (m*d, k)
+        a matrix (rows for leafs, columns for depth) where each value
+
+        Gamma[i,k]  = sum_l II(D_il = k) n_l p_ld
+
+        (i.e. sum of training observations p values for those obs with tree
+        dist k away from new node i, class d)
+    eta : array (m, k)
+        a matrix (rows for leafs, columns for depth) where each value
+
+        eta[i,k]  = sum_l II(D_il = k) n_l
+
+        (i.e. the total number of training observations that are tree dist k
+        away from the new node i)
+    weights : array (m,)
+        weights associated with node i. For our analysis this weight = number
+        of observations in the ith node
+
+    Returns
+    -------
+    ce_sg_adam : lambda function
+        lambda function of take_gradient_ce function whos only is input is lamb
+    """
+
+    ce_sg_adam = lambda lamb: take_gradient_ce(p, Gamma, eta,
+                                               weights, lamb)
+
+    return ce_sg_adam
+
 def calc_cost(y, Gamma, eta, weights, lamb):
     """
     calculates weighted l2 loss function
@@ -726,13 +817,14 @@ def smooth(random_forest, X_trained=None, y_trained=None,
                X_tune=None, y_tune=None, verbose=True,
                no_constraint=False, sanity_check=False,
                resample_tune=False,
-               subgrad_max_num=1000, subgrad_t_fix=1,
+               sgd_max_num=1000, sgd_t_fix=1,
                all_trees=False,
                initial_lamb_seed=None,
                parents_all=False,
                distance_style=["standard","max", "min"],
                class_eps=1e-4,
-               class_loss=["ce","l2"]):
+               class_loss=["ce","l2"],
+               adam=None):
     """
     creates a smooth random forest (1 lambda set across all trees)
 
@@ -766,10 +858,10 @@ def smooth(random_forest, X_trained=None, y_trained=None,
         logic to do full process but keep same weights
     resample_tune: bool
         logic to tune / optimize with another bootstrap same from X
-    subgrad_max_num : int
-        number of steps to take for the subgradient optimization
-    subgrad_t_fix : scalar
-        value for fixed t step size for gradient descent
+    sgdgrad_max_num : int
+        number of steps to take for the stocastic gradient optimization
+    sgdgrad_t_fix : scalar
+        value for fixed t step size for stocastic gradient descent
     all_trees : bool
         logic to use all trees (and therefore do full gradient descent)
     initial_lamb_seed : scalar
@@ -789,6 +881,10 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     class_loss : str (default = "ce")
         loss function for classification regression. Either "l2" for l2 loss or
         "ce" for cross-entropy loss.
+    adam : dict (default is None)
+        dictionary for input parameters adam SGD (if None, regular SGD is used)
+        Note expected structure looks like:
+            {"alpha": .001, "beta_1": .9, "beta_2": .999,"eps": 1e-8}
 
     Returns:
     --------
@@ -836,6 +932,11 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
     if type(class_loss) == list:
         class_loss = class_loss[0]
+
+    if adam is None:
+        reg_sgd = True
+    else:
+        reg_sgd = False
 
 
     inner_rf = copy.deepcopy(random_forest)
@@ -958,22 +1059,43 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
     if not sanity_check:
         if rf_type == "reg" or class_loss == "l2":
-            lamb,lamb_last,c = subgrad_descent(y_all, weight_all,
-                               Gamma, eta, t_idx_vec,
-                               lamb_init=lamb, # no change
-                               t_fix=subgrad_t_fix,
-                               num_steps=subgrad_max_num,
-                               constrained=not no_constraint,
-                               verbose=verbose)
+            if reg_sgd:
+                lamb,lamb_last,c = stocastic_grad_descent(y_all, weight_all,
+                                   Gamma, eta, t_idx_vec,
+                                   lamb_init=lamb, # no change
+                                   t_fix=sgd_t_fix,
+                                   num_steps=sgd_max_num,
+                                   constrained=not no_constraint,
+                                   verbose=verbose)
+            else:
+                lamb,lamb_last,c = stocastic_grad_descent(y_all, weight_all,
+                                   Gamma, eta, t_idx_vec,
+                                   lamb_init=lamb, # no change
+                                   t_fix=sgd_t_fix,
+                                   num_steps=sgd_max_num,
+                                   constrained=not no_constraint,
+                                   verbose=verbose,
+                                   adam=adam)
         else:
-            lamb,lamb_last,c = subgrad_descent_ce(y_all, weight_all,
+            if reg_sgd:
+                lamb,lamb_last,c = stocastic_grad_descent_ce(y_all, weight_all,
                                Gamma, eta, t_idx_vec,
                                lamb_init=lamb,
-                               t_fix=subgrad_t_fix,
-                               num_steps=subgrad_max_num,
+                               t_fix=sgd_t_fix,
+                               num_steps=sgd_max_num,
                                constrained=not no_constraint,
                                verbose=verbose,
                                class_eps=class_eps)
+            else:
+                lamb,lamb_last,c = stocastic_grad_descent_ce(y_all, weight_all,
+                               Gamma, eta, t_idx_vec,
+                               lamb_init=lamb,
+                               t_fix=sgd_t_fix,
+                               num_steps=sgd_max_num,
+                               constrained=not no_constraint,
+                               verbose=verbose,
+                               class_eps=class_eps,
+                               adam=adam)
     else:
         lamb_last = lamb
         c = []
@@ -1039,17 +1161,20 @@ def smooth(random_forest, X_trained=None, y_trained=None,
 
     return inner_rf, inner_rf2, lamb_last, c
 
-def subgrad_descent(y_leaf, weights_leaf,
+def stocastic_grad_descent(y_leaf, weights_leaf,
                     Gamma, eta, tree_idx_vec,
                     lamb_init, t_fix=1, num_steps=1000,
-                    constrained=True, verbose=True):
+                    constrained=True, verbose=True,
+                    adam=None):
     """
-    Preform subgradient descent to minimize the l2 defined by
+    Preform stocastic gradient descent to minimize the l2 defined by
 
     |(y_leaf - Gamma @ lamb / eta @ lamb) * diag(weight_leaf**(1/2))|^2
 
-    The subgradient steps randomly select a tree for each step to estimate the
-    gradient with.
+    The stocastic gradient steps randomly select a tree for each step to
+    estimate the gradient with.
+
+
 
     Arguments:
     ----------
@@ -1075,8 +1200,11 @@ def subgrad_descent(y_leaf, weights_leaf,
     constrained : bool
         logic for if the space for lamb values is constrainted onto the simplex
     verbose : bool
-        logic to show steps of subgradient descent
-
+        logic to show steps of stocastic gradient descent
+    adam : dict (default is None)
+        dictionary for input parameters adam SGD (if None, regular SGD is used)
+        Note expected structure looks like:
+            {"alpha": .001, "beta_1": .9, "beta_2": .999,"eps": 1e-8}
     Returns:
     --------
     lamb : array (K,)
@@ -1110,6 +1238,12 @@ def subgrad_descent(y_leaf, weights_leaf,
     else:
         first_iter = range(num_steps)
 
+    if adam is None:
+        reg_sgd = True
+    else:
+        reg_sgd = False
+
+
     lamb = lamb_init
 
     lamb_best = lamb
@@ -1128,10 +1262,23 @@ def subgrad_descent(y_leaf, weights_leaf,
         Gamma_inner = Gamma[tree_idx_vec == tree_idx,:]
         eta_inner = eta[tree_idx_vec == tree_idx,:]
 
-        grad = take_gradient(y_inner, Gamma_inner, eta_inner,
-                             weights_inner, lamb)
+        if reg_sgd: # regular sgd
+            grad = take_gradient(y_inner, Gamma_inner, eta_inner,
+                                 weights_inner, lamb)
 
-        lamb = lamb - t_fix * grad
+            lamb = lamb - t_fix * grad
+        else: # adam sgd
+            take_gradient_adam = l2_s_grad_for_adam_wrapper(
+                                                            y_inner,
+                                                            Gamma_inner,
+                                                            eta_inner,
+                                                            weights_inner)
+            if s_step == 0:
+                iv = None
+            lamb, iv = adam_sgd.adam_step(grad_fun = take_gradient_adam,
+                                          lamb_init = lamb,
+                                          internal_values = iv,
+                                          **adam)
 
         if constrained:
            lamb = prox_project(lamb)
@@ -1148,17 +1295,18 @@ def subgrad_descent(y_leaf, weights_leaf,
 
 
 
-def subgrad_descent_ce(p_leaf, weights_leaf,
+def stocastic_grad_descent_ce(p_leaf, weights_leaf,
                     Gamma, eta, tree_idx_vec,
                     lamb_init, t_fix=1, num_steps=1000,
                     constrained=True, verbose=True,
-                    class_eps = 1e-4):
+                    class_eps=1e-4,
+                    adam=None):
     """
-    Preform subgradient descent to minimize the cross-entropy defined by
+    Preform stocastic gradient descent to minimize the cross-entropy defined by
 
     Loss = \sum_{l=1}^{# leaves} n_l \sum_{d=1}^D p_{ld} log(\hat{p}_{ld})
 
-    The subgradient steps randomly select a tree for each step to estimate the
+    The stocastic gradient steps randomly select a tree for each step to estimate the
     gradient with.
 
 
@@ -1186,11 +1334,15 @@ def subgrad_descent_ce(p_leaf, weights_leaf,
     constrained : bool
         logic for if the space for lamb values is constrainted onto the simplex
     verbose : bool
-        logic to show steps of subgradient descent
+        logic to show steps of stocastic gradient descent
     class_eps : scalar (default 1e-4)
         scalar value such that the lamb values stay in the space defined by
         {x:x_i >= (class_eps / n)/(class_eps + 1), sum_i x_i =1}_i=1^n. This
         is done to not let the cross-entropy loss or it's derivative explode.
+    adam : dict (default is None)
+        dictionary for input parameters adam SGD (if None, regular SGD is used)
+        Note expected structure looks like:
+            {"alpha": .001, "beta_1": .9, "beta_2": .999,"eps": 1e-8}
 
     Returns:
     --------
@@ -1220,12 +1372,16 @@ def subgrad_descent_ce(p_leaf, weights_leaf,
         raise TypeError("For simplicity please initialize lamb_init with "+\
                         "a feasible value \n(ex: np.ones(Gamma.shape[1])/"+\
                         "Gamma.shape[1] )")
-
     if verbose:
         bar = progressbar.ProgressBar()
         first_iter = bar(np.arange(num_steps))
     else:
         first_iter = range(num_steps)
+
+    if adam is None:
+        reg_sgd = True
+    else:
+        reg_sgd = False
 
     lamb = lamb_init
 
@@ -1245,10 +1401,24 @@ def subgrad_descent_ce(p_leaf, weights_leaf,
         Gamma_inner = Gamma[tree_idx_vec == tree_idx,:]
         eta_inner = eta[tree_idx_vec == tree_idx,:]
 
-        grad = take_gradient_ce(p_inner, Gamma_inner, eta_inner,
+
+        if reg_sgd: # regular sgd
+            grad = take_gradient_ce(p_inner, Gamma_inner, eta_inner,
                              weights_inner, lamb)
 
-        lamb = lamb - t_fix * grad
+            lamb = lamb - t_fix * grad
+        else: # adam sgd
+            take_gradient_adam = ce_s_grad_for_adam_wrapper(
+                                                            p_inner,
+                                                            Gamma_inner,
+                                                            eta_inner,
+                                                            weights_inner)
+            if s_step == 0:
+                iv = None
+            lamb, iv = adam_sgd.adam_step(grad_fun = take_gradient_adam,
+                                          lamb_init = lamb,
+                                          internal_values = iv,
+                                          **adam)
 
         if constrained:
            lamb = prox_project_ce(lamb, class_eps)

@@ -7,7 +7,6 @@ from sklearn.ensemble import RandomForestRegressor
 from collections import Counter
 import sys, os
 
-
 import smooth_rf
 
 def test_depth_per_node():
@@ -694,6 +693,20 @@ def test_smooth_classifier():
     assert np.all(no_update_pred == base_pred), \
         "sanity check for rf classifier in smoother failed"
 
+    # general check for erroring adam
+    try:
+        a,b,c,d = smooth_rf.smooth(random_forest, X_trained, y_trained,
+                                    parents_all = True, verbose = False,
+                                    adam = {"alpha": .001, "beta_1": .9,
+                                            "beta_2": .999,"eps": 1e-8})
+    except:
+        assert False, \
+            "error running smoothing_function for a random forest "+\
+            "classifier with adam"
+
+
+
+
 
 
 def test_smooth_regressor():
@@ -740,6 +753,17 @@ def test_smooth_regressor():
 
     assert np.all(no_update_pred == base_pred), \
         "sanity check for rf regressor in smoother failed"
+
+    try:
+        a,b,c,d = smooth_rf.smooth(random_forest, X_trained, y_trained,
+                                    parents_all=True, verbose=False,
+                                    adam = {"alpha": .001, "beta_1": .9,
+                                            "beta_2": .999,"eps": 1e-8})
+    except:
+        assert False, \
+            "error running smoothing_function for a random forest "+\
+            "classifier with adam"
+
 
 def test_bound_box_tree():
     """
@@ -936,4 +960,236 @@ def test_center_tree():
     assert np.all(cc_truth == cc_static), \
         "centers doesn't replicate expected boxes for static example"
 
+def test_take_gradient():
+    """
+    test take_gradient (just check dimensions currently)
+
+    TODO: check some individual level math...
+    """
+    # sketch this out (needed for other tests)
+    n = 200
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    rf_class = sklearn.ensemble.RandomForestRegressor(n_estimators = 2,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    tree = random_forest.estimators_[0]
+    max_depth_range = np.max(smooth_rf.depth_per_node(tree)) + 1
+
+    # y_leaves & weights (training):
+    V = tree.decision_path(X)
+    V_leaf = V[:,tree.tree_.children_left == -1]
+    weight = np.array(V_leaf.sum(axis = 0)).ravel() # by column (leaf)
+
+    weight_div = weight.copy()
+    weight_div[weight_div == 0] = 1
+
+    y_leaf = (V_leaf.T @ y) / weight_div
+
+    Gamma, eta = smooth_rf.create_Gamma_eta_tree(tree)
+
+    for _ in range(10):
+        lamb = np.random.uniform(size = Gamma.shape[1])
+        lamb = lamb / lamb.sum()
+
+        grad = smooth_rf.take_gradient(y_leaf.ravel(),
+                                       Gamma, eta,
+                                       weight, lamb)
+
+        assert grad.shape == lamb.shape, \
+            "gradient returned has incorrect shape"
+
+        # individual (try to compute just 1 gradient value?):
+        #y_leaf_ind= y_leaf[np.random.] # TODO
+
+def test_take_gradient_ce():
+    """
+    test take_gradient_ce (just check dimensions currently)
+
+    TODO: check some individual level math...
+    """
+    # sketch this out (needed for other tests)
+    n = 200
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    y_cat = np.array(
+                     pd.cut(y, bins = 5, labels = np.arange(5, dtype = np.int)),
+                     dtype = np.int)
+
+    y = y_cat
+
+    num_classes = len(Counter(y_cat).keys())
+
+    rf_class = sklearn.ensemble.RandomForestClassifier(n_estimators = 2,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    tree = random_forest.estimators_[0]
+
+    max_depth_range = np.max(smooth_rf.depth_per_node(tree)) + 1
+
+    Gamma, eta = smooth_rf.create_Gamma_eta_tree(tree)
+
+    # y_leaves & weights (training):
+    V = tree.decision_path(X)
+    V_leaf = V[:,tree.tree_.children_left == -1]
+    weight = V_leaf.sum(axis = 0) # by column (leaf)
+
+    weight_div = weight.copy()
+    weight_div[weight_div == 0] = 1
+
+    y_tune = np.array(pd.get_dummies(y))
+    y_leaf = (V_leaf.T @ y_tune) / weight_div.T
+
+    Gamma, eta = smooth_rf.create_Gamma_eta_tree(tree)
+
+    Gamma_shape = Gamma.shape
+    num_classes = Gamma.shape[0]
+    Gamma = Gamma.reshape((Gamma.shape[0] * Gamma.shape[1],
+                                 Gamma.shape[2]))
+
+    eta = np.tile(eta, (num_classes,1))
+    y_leaf = y_leaf.T.reshape((-1,))
+    weight = np.tile(weight, num_classes)
+
+
+    for _ in range(10):
+        lamb = np.random.uniform(size = Gamma.shape[1])
+        lamb = lamb / lamb.sum()
+
+        grad = smooth_rf.take_gradient_ce(np.array(y_leaf).ravel(),
+                                          Gamma, eta,
+                                          np.array(weight).ravel(),
+                                          lamb)
+
+        assert grad.shape == lamb.shape, \
+            "gradient returned has incorrect shape"
+
+        # individual (try to compute just 1 gradient value?):
+        #y_leaf_ind= y_leaf[np.random.] # TODO
+
+
+def test_l2_s_grad_for_adam_wrapper():
+    n = 200
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    rf_class = sklearn.ensemble.RandomForestRegressor(n_estimators = 2,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    tree = random_forest.estimators_[0]
+    max_depth_range = np.max(smooth_rf.depth_per_node(tree)) + 1
+
+    # y_leaves & weights (training):
+    V = tree.decision_path(X)
+    V_leaf = V[:,tree.tree_.children_left == -1]
+    weight = np.array(V_leaf.sum(axis = 0)).ravel() # by column (leaf)
+
+    weight_div = weight.copy()
+    weight_div[weight_div == 0] = 1
+
+    y_leaf = (V_leaf.T @ y) / weight_div
+
+    Gamma, eta = smooth_rf.create_Gamma_eta_tree(tree)
+
+    wrapper_funct = smooth_rf.l2_s_grad_for_adam_wrapper(y_leaf,
+                                                         Gamma, eta,
+                                                         weight)
+
+    for _ in range(10):
+        lamb = np.random.uniform(size = Gamma.shape[1])
+        lamb = lamb / lamb.sum()
+
+        g_straight = smooth_rf.take_gradient(y_leaf, Gamma, eta, weight,
+                                             lamb)
+        g_wrapper = wrapper_funct(lamb)
+
+        assert np.all(g_straight == g_wrapper), \
+            "l2 wrapper function should return same values at object it wraps"
+
+
+def test_ce_s_grad_for_adam_wrapper():
+    n = 200
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    y_cat = np.array(
+                     pd.cut(y, bins = 5, labels = np.arange(5, dtype = np.int)),
+                     dtype = np.int)
+
+    y = y_cat
+
+    num_classes = len(Counter(y_cat).keys())
+
+    rf_class = sklearn.ensemble.RandomForestClassifier(n_estimators = 2,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    tree = random_forest.estimators_[0]
+
+    max_depth_range = np.max(smooth_rf.depth_per_node(tree)) + 1
+
+    Gamma, eta = smooth_rf.create_Gamma_eta_tree(tree)
+
+    # y_leaves & weights (training):
+    V = tree.decision_path(X)
+    V_leaf = V[:,tree.tree_.children_left == -1]
+    weight = V_leaf.sum(axis = 0) # by column (leaf)
+
+    weight_div = weight.copy()
+    weight_div[weight_div == 0] = 1
+
+    y_tune = np.array(pd.get_dummies(y))
+    p_leaf = (V_leaf.T @ y_tune) / weight_div.T
+
+    Gamma, eta = smooth_rf.create_Gamma_eta_tree(tree)
+
+    Gamma_shape = Gamma.shape
+    num_classes = Gamma.shape[0]
+    Gamma = Gamma.reshape((Gamma.shape[0] * Gamma.shape[1],
+                                 Gamma.shape[2]))
+
+    eta = np.tile(eta, (num_classes,1))
+    p_leaf = p_leaf.T.reshape((-1,))
+    weight = np.tile(weight, num_classes)
+
+    wrapper_funct = smooth_rf.ce_s_grad_for_adam_wrapper(
+                                        np.array(p_leaf).ravel(),
+                                        Gamma,
+                                        eta,
+                                        np.array(weight).ravel())
+
+    for _ in range(10):
+        lamb = np.random.uniform(size = Gamma.shape[1])
+        lamb = lamb / lamb.sum()
+
+        g_straight = smooth_rf.take_gradient_ce(np.array(p_leaf).ravel(),
+                                                Gamma, eta,
+                                                np.array(weight).ravel(),
+                                                lamb)
+
+        g_wrapper = wrapper_funct(lamb)
+
+        assert np.all(g_straight == g_wrapper), \
+            "ce wrapper function should return same values at object it wraps"
 

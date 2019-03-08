@@ -182,9 +182,10 @@ def make_kernel(Ut_prime_dict, lamb_vec = None):
         t_mean[t_idx] = Ut_prime_dict[t_idx].sum(axis = 0)/\
                             Ut_prime_dict[t_idx].shape[0]
 
+    Kmat = 0 # not useful, but tests don't like Kmat not being defined
+    # before the "for" statement below
+
     for t_idx in t_mean.keys():
-        Kmat = 0 # not useful, but tests don't like Kmat not being defined
-        # before the "else" statement below
 
         if t_idx == 0:
             K_mat = lamb_vec[t_idx] * t_mean[t_idx]
