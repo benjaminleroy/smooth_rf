@@ -35,12 +35,17 @@ path = "../"
 
 
 data_set = sys.argv[1]
-if data_set != "moon":
-    NameError("dataset should be the moon dataset")
+if data_set != "moon" and data_set != "microsoft":
+    NameError("dataset should be the moon or microsoft dataset")
 else:
     reg_or_class = "class"
     y_all = None
     data_all = None
+
+if data_set == "moon":
+    n_data = 350
+if data_set == "microsoft":
+    n_data = 650
 
 n = sys.argv[2]
 num_trees = np.int(n)
@@ -277,12 +282,14 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 y_tune = y_tune,
                                 resample_tune= resample_input,
                                 no_constraint = not constrained,
-                                subgrad_max_num = max_iter,
-                                subgrad_t_fix = t,
+                                sgd_max_num = max_iter,
+                                sgd_t_fix = t,
                                 parents_all=parents_all,
                                 verbose = False,
                                 all_trees = all_trees,
-                                initial_lamb_seed = initial_lamb_seed_f())
+                                initial_lamb_seed = initial_lamb_seed_f(),
+                                adam = {"alpha": .001, "beta_1": .9,
+                                        "beta_2": .999,"eps": 1e-8})
                 c_mat[i, j, :] = c
 
                 yhat_test_base = model_fit.predict(data_test)
@@ -376,7 +383,7 @@ create_figs = True
 if create_figs:
 
     score_mat, c = check_rf_grow(
-           n_data=350,
+           n_data=n_data,
            n_large=5000,
            n_draws=20,
            reg_or_class=reg_or_class,
@@ -410,6 +417,7 @@ if create_figs:
                                  style + "_" +\
                                  "distance-"+ d +\
                                  "_tree_depth_dist-"+ inner_dist+\
+                                 "_adam" +\
                                  ".csv")
 
         save_as_pdf_pages([depth_vis  +\
@@ -424,6 +432,7 @@ if create_figs:
                                  style + "_" +\
                                  "distance-"+ d +\
                                  "_tree_depth_dist-"+ inner_dist+\
+                                 "_adam" +\
                                   ".pdf")
 
     if style == "element-based":
@@ -441,7 +450,9 @@ if create_figs:
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
-                                 str(max_iter) + ".csv")
+                                 str(max_iter) +\
+                                 "_adam" +\
+                                 ".csv")
 
         save_as_pdf_pages([depth_vis  +\
                            theme(figure_size = (8,6))],
@@ -458,7 +469,9 @@ if create_figs:
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
-                                 str(max_iter) + ".pdf")
+                                 str(max_iter) +\
+                                 "_adam" +\
+                                 ".pdf")
 
 
 
@@ -477,7 +490,9 @@ if create_figs:
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
-                                 str(max_iter) + ".csv")
+                                 str(max_iter) +\
+                                 "_adam" +\
+                                 ".csv")
 
         save_as_pdf_pages([cost_vis +\
                            theme(figure_size = (8,6))],
@@ -494,7 +509,9 @@ if create_figs:
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
-                                 str(max_iter) + ".pdf")
+                                 str(max_iter) +\
+                                 "_adam" +\
+                                 ".pdf")
 
 
 

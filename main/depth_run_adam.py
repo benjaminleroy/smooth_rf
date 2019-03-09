@@ -5,7 +5,6 @@ import sklearn.ensemble
 import sklearn
 import progressbar
 import sklearn.model_selection
-import sklearn.datasets
 from plotnine import *
 import pdb
 import sys
@@ -18,27 +17,51 @@ import smooth_rf
 path = "../"
 
 # input
-# 1: data_set = ["moon"]
+# 1: data_set = ["microsoft", "online_news", "splice"]
 # 2: num_trees = [1, 10, 300] (integer)
 # 3: tuning = ["resample", "oob", "oracle"]
 # 4: constrained = ["c","nc"]
 # 5: style = ["lb", "eb"]
 # 6: distance = ["l","p"]
 # 7: inner_distance = ["standard", "max", "min"]
-# 8: loss_function = ["ce","l2"]
 # next are only needed if s = "lb":
-# 9: initial lambda = ["rf","r"]
-# 10: batch = ["tree", "all"]
-# 11: max_iter = 10000
-# 12: t = [.1,1,10,100] (scalar)
-
+# 8: initial lambda = ["rf","r"]
+# 9: batch = ["tree", "all"]
+# 10: max_iter = 10000
+# 11: t = [.1,1,10,100] (scalar)
 
 
 data_set = sys.argv[1]
-if data_set != "moon":
-    NameError("dataset should be the moon dataset")
-else:
+if data_set == "online_news":
+    data = pd.read_csv(path +\
+                       "data/OnlineNewsPopularity/OnlineNewsPopularity.csv")
+
+    y_all = np.log10(data[" shares"])
+    data_all = data.drop(columns = ["url"," timedelta"," shares"])
+    data_all = np.array(data_all)
+    reg_or_class = "reg"
+elif data_set == "splice":
+    data_train = pd.read_csv(path + "data/splice/splice.data.txt", header = -1,
+                             names = ["class","names", "genes"])
+    data_train = data_train.drop(columns = ["names"])
+
+    def cleanup(gene_string):
+        g = gene_string.replace(" ", "")
+        g = str([x for x in g])
+        g = g.replace("]","")
+        g = g.replace("[","")
+        g = g.replace("'","")
+        return g
+
+    gene_expand_df = data_train["genes"].apply(cleanup).str.split(", ", expand=True)
+
+    gene_expand_df_dummy = pd.get_dummies(gene_expand_df)
+
+    y_all = pd.factorize(data_train["class"])[0]
+    data_all = np.array(gene_expand_df_dummy)
     reg_or_class = "class"
+else:
+    reg_or_class = 'reg'
     y_all = None
     data_all = None
 
@@ -76,13 +99,9 @@ inner_dist = sys.argv[7]
 if inner_dist not in ["standard", "max", "min"]:
     NameError("inner_dist, needs to be 1 of 3 options")
 
-loss = sys.argv[8]
-if loss not in ["ce","l2"]:
-    NameError("loss need to be 1 of the 2 options")
-
 
 if s == "eb":
-    i = sys.argv[9]
+    i = sys.argv[8]
     if i == "rf":
         initial_lamb = "rf-init"
     elif i == "r":
@@ -90,7 +109,7 @@ if s == "eb":
     else:
         NameError("i needs to be 1 of the 2 options")
 
-    b = sys.argv[10]
+    b = sys.argv[9]
     if b == "tree":
         batch = "single-tree"
     elif b == "all":
@@ -98,10 +117,10 @@ if s == "eb":
     else:
         NameError("b needs to be 1 of 2 options")
 
-    m = sys.argv[11]
+    m = sys.argv[10]
     max_iter = np.int(m)
 
-    subgrad_fix_t = np.float(sys.argv[12])
+    subgrad_fix_t = np.float(sys.argv[11])
 
 else:
     initial_lamb = ""
@@ -128,7 +147,6 @@ def check_rf_grow(n_data, n_large, n_draws,
                parents_all = False,
                batch = ["single-tree", "all-trees"],
                initial_lamb = ["rf-init", "random-init"],
-               loss_class = ["ce","l2"],
                max_iter = 10000, t = 1,
                data_all = None, y_all = None):
 
@@ -170,10 +188,6 @@ def check_rf_grow(n_data, n_large, n_draws,
         data_generator = lambda large_n: smooth_rf.generate_data_knn(
                                                      n=large_n,
                                                      p=np.array([.3,.7]))
-    elif data_set == "moon":
-        data_generator = lambda large_n: sklearn.datasets.make_moons(
-                                                        n_samples=large_n,
-                                                        noise=.3)
     elif data_set == "online_news" or data_set == "splice":
         if tuning == "oracle":
             NameError("tuning cannot be oracle for the online_news dataset")
@@ -211,10 +225,7 @@ def check_rf_grow(n_data, n_large, n_draws,
     else:
         NameError("style needs to be 1 of the 2 options")
 
-    if type(loss_class) is list:
-        loss_class = loss_class[0]
-    if loss_class not in ["ce","l2"]:
-        NameError("style neds to be 1 of the 2 options")
+
 
     for i, max_depth in depth_iter:
         for j in np.arange(n_draws):
@@ -261,8 +272,7 @@ def check_rf_grow(n_data, n_large, n_draws,
                                     resample_tune = resample_input,
                                     no_constraint = not constrained,
                                     parents_all=parents_all,
-                                    verbose = False,
-                                    )
+                                    verbose = False)
                 yhat_test_base = model_fit.predict(data_test)
                 score_mat[0,i,j] = scoring(y_test,yhat_test_base)
                 yhat_test = smooth_rf_level.predict(data_test)
@@ -277,12 +287,14 @@ def check_rf_grow(n_data, n_large, n_draws,
                                 y_tune = y_tune,
                                 resample_tune= resample_input,
                                 no_constraint = not constrained,
-                                subgrad_max_num = max_iter,
-                                subgrad_t_fix = t,
+                                sgd_max_num = max_iter,
+                                sgd_t_fix = t,
                                 parents_all=parents_all,
                                 verbose = False,
                                 all_trees = all_trees,
-                                initial_lamb_seed = initial_lamb_seed_f())
+                                initial_lamb_seed = initial_lamb_seed_f(),
+                                adam = {"alpha": .001, "beta_1": .9,
+                                        "beta_2": .999,"eps": 1e-8})
                 c_mat[i, j, :] = c
 
                 yhat_test_base = model_fit.predict(data_test)
@@ -376,8 +388,8 @@ create_figs = True
 if create_figs:
 
     score_mat, c = check_rf_grow(
-           n_data=350,
-           n_large=5000,
+           n_data=650,
+           n_large=10000,
            n_draws=20,
            reg_or_class=reg_or_class,
            depth_range=np.arange(2,50,2),
@@ -391,8 +403,7 @@ if create_figs:
            batch = batch,
            initial_lamb = initial_lamb,
            max_iter = max_iter, t = subgrad_fix_t,
-           data_all = data_all, y_all = y_all,
-           loss_class = loss
+           data_all = data_all, y_all = y_all
            )
 
     depth_vis, data_vis_depth = depth_error_vis(score_mat,
@@ -402,8 +413,7 @@ if create_figs:
 
         data_vis_depth.to_csv(path +\
                               "images/data_vis_depth_"+\
-                                 data_set + "_" + reg_or_class + "_" +\
-                                 "loss-" + loss + "_" +\
+                                 data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
                                  c_in + "_" +\
@@ -416,8 +426,7 @@ if create_figs:
                            theme(figure_size = (8,6))],
                           filename = path +\
                                  "images/depth_vis_"  +\
-                                 data_set + "_" + reg_or_class + "_" +\
-                                 "loss-" + loss + "_" +\
+                                 data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
                                  c_in + "_" +\
@@ -430,8 +439,7 @@ if create_figs:
 
         data_vis_depth.to_csv(path +\
                               "images/data_vis_depth_" +\
-                                 data_set + "_" + reg_or_class + "_" +\
-                                 "loss-" + loss + "_" +\
+                                 data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
                                  c_in + "_" +\
@@ -447,8 +455,7 @@ if create_figs:
                            theme(figure_size = (8,6))],
                           filename = path +\
                                  "images/depth_vis_" +\
-                                 data_set + "_" + reg_or_class + "_" +\
-                                 "loss-" + loss + "_" +\
+                                 data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
                                  c_in + "_" +\
@@ -466,8 +473,7 @@ if create_figs:
 
         data_vis_cost.to_csv(path +\
                                  "images/data_vis_cost_" +\
-                                 data_set + "_" + reg_or_class + "_" +\
-                                 "loss-" + loss + "_" +\
+                                 data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
                                  c_in + "_" +\
@@ -483,8 +489,7 @@ if create_figs:
                            theme(figure_size = (8,6))],
                           filename = path +\
                                  "images/cost_vis_" +\
-                                 data_set + "_" + reg_or_class + "_" +\
-                                 "loss-" + loss + "_" +\
+                                 data_set + "_" +\
                                  "trees" + str(num_trees) + "_" +\
                                  tuning + "_" +\
                                  c_in + "_" +\
