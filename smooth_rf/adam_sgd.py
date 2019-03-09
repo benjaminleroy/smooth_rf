@@ -65,7 +65,8 @@ def adam_step(grad_fun, lamb_init = None,
     hat_1st_moment = iv["1st moment"]/(1-(beta_1**iv["t"]))
     hat_2nd_moment = iv["2nd moment"]/(1-(beta_2**iv["t"]))
 
-    iv["lamb"] = iv["lamb"] - alpha * hat_1st_moment/(hat_2nd_moment + eps)
+    iv["lamb"] = iv["lamb"] - alpha * hat_1st_moment / \
+                                    (np.sqrt(hat_2nd_moment) + eps)
 
     return iv["lamb"], iv
 

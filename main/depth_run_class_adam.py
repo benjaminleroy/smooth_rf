@@ -32,6 +32,8 @@ path = "../"
 # 11: max_iter = 10000
 # 12: t = [.1,1,10,100] (scalar)
 
+# ipython depth_run_class_adam.py moon 10 oob c eb p standard ce rf tree 10000 1
+# ipython depth_run_class_adam.py microsoft 10 oob c eb p standard ce rf tree 10000 1
 
 
 data_set = sys.argv[1]
