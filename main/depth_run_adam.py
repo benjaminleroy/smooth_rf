@@ -420,7 +420,7 @@ if create_figs:
                                  style + "_" +\
                                  "distance-"+ d +\
                                  "_tree_depth_dist-"+ inner_dist+\
-                                 ".csv")
+                                 "_adam.csv")
 
         save_as_pdf_pages([depth_vis  +\
                            theme(figure_size = (8,6))],
@@ -433,7 +433,7 @@ if create_figs:
                                  style + "_" +\
                                  "distance-"+ d +\
                                  "_tree_depth_dist-"+ inner_dist+\
-                                  ".pdf")
+                                  "_adam.pdf")
 
     if style == "element-based":
 
@@ -449,7 +449,7 @@ if create_figs:
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
-                                 str(max_iter) + ".csv")
+                                 str(max_iter) + "_adam.csv")
 
         save_as_pdf_pages([depth_vis  +\
                            theme(figure_size = (8,6))],
@@ -465,7 +465,7 @@ if create_figs:
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
-                                 str(max_iter) + ".pdf")
+                                 str(max_iter) + "_adam.pdf")
 
 
 
@@ -483,7 +483,7 @@ if create_figs:
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
-                                 str(max_iter) + ".csv")
+                                 str(max_iter) + "_adam.csv")
 
         save_as_pdf_pages([cost_vis +\
                            theme(figure_size = (8,6))],
@@ -499,7 +499,7 @@ if create_figs:
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
-                                 str(max_iter) + ".pdf")
+                                 str(max_iter) + "_adam.pdf")
 
 
 
