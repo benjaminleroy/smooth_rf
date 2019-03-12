@@ -1570,5 +1570,473 @@ def center_forest(forest, X):
 
     return mean_all, t_idx_all
 
+#### pytorch prep
+
+
+def create_Gamma_eta_tree_more(tree,
+                      parents_all=False,
+                      dist_mat_style=["standard", "max", "min"]):
+    """
+    creates the Gamma and eta matrices for a single tree, where these two
+    matrices are defined:
+
+    Gamma_il = sum_j II(D_ij = l) n_j y_j
+    eta_il = sum_j II(D_ij = l) n_j
+
+    where n_j, y_j are the number of observations in leaf j and the predicted
+    value associated with  leaf j for regression, or where y_j = p_j, a
+    probably vector associated with leaf j in classification. Note that D_ij
+    is the tree based distance between leaf i and j.
+
+    Arguments:
+    ----------
+    tree : sklearn style tree (DecisionTreeClassifier or DecisionTreeRegressor)
+        grown tree to create distance matrix relative to
+    parents_all : bool
+        logic to instead include all observations with parent of distance k
+        away
+    dist_mat_style : string
+        style of inner-tree distance to use, see *details* in the
+        create_distance_mat_leaves doc-string.
+
+    Returns:
+    --------
+    Gamma : array (n_leaves, maximum depth of tree + 1)
+            (number of classes, n_leaves, maximum depth of tree + 1)
+        see description above
+    eta : array (n_leaves, maximum depth of tree + 1)
+        see description above
+    n_leaf_original : (n leaves, )
+        number of observations that fell into the leaf
+    leaf_depth : array (n_leaves, )
+        depth of each leaf
+    leaf_impurity : array (n_leaves, )
+        impurity for each leaf based on tree criterion (default is 'gini' for
+        classification, 'mse' for regression))
+    """
+
+    if type(tree) is sklearn.tree.tree.DecisionTreeRegressor:
+
+        n_leaf_original = tree.tree_.weighted_n_node_samples[
+                                    tree.tree_.children_left == -1]
+        yhat_leaf_original = tree.tree_.value.ravel()[
+                                    tree.tree_.children_left == -1]
+        ny_leaf_original = n_leaf_original * yhat_leaf_original
+
+        leaf_impurity = tree.tree_.impurity[tree.tree_.children_left == -1]
+
+    elif type(tree) is sklearn.tree.tree.DecisionTreeClassifier:
+
+        n_leaf_original = tree.tree_.weighted_n_node_samples[
+                                tree.tree_.children_left == -1]
+        ny_leaf_original = tree.tree_.value[
+                                tree.tree_.children_left == -1,:,:].reshape(
+                                                    n_leaf_original.shape[0],
+                                                    tree.tree_.value.shape[-1])
+        leaf_impurity = tree.tree_.impurity[tree.tree_.children_left == -1]
+
+        # yhat_leaf_original = np.diag(1/n_leaf_original) @ ny_leaf_original
+
+    else:
+        ValueError("tree needs either be a "+\
+                   "sklearn.tree.tree.DecisionTreeClassifier "+\
+                   "or a sklearn.tree.tree.DecisionTreeRegressor")
+
+    ############################
+    # Depth per leaf gathering #
+    ############################
+
+    decision_mat_leaves, _ = create_decision_per_leafs(tree)
+
+    Q = decision_mat_leaves @ decision_mat_leaves.T
+
+    if type(Q) is scipy.sparse.coo.coo_matrix or \
+        type(Q) is scipy.sparse.csr.csr_matrix:
+        leaf_depth = np.diagonal(Q.todense()) - 1
+    else:
+        leaf_depth = np.diagonal(Q) - 1
+
+    ##############################
+    ## Distance Matrix Creation ##
+    ##############################
+
+
+    dist_mat_leaves = create_distance_mat_leaves(tree,
+                                    decision_mat_leaves = decision_mat_leaves,
+                                    style = dist_mat_style)
+
+    ##########################
+    # Gamma and Eta Creation #
+    ##########################
+
+    # creating a 3d sparse array
+    xx_all = np.zeros(shape = (0,))
+    yy_all = np.zeros(shape = (0,))
+    kk_all = np.zeros(shape = (0,))
+
+
+    for k_idx in np.arange(np.min(dist_mat_leaves), np.max(dist_mat_leaves)+1):
+        if parents_all:
+            xx, yy = np.where(dist_mat_leaves <= k_idx)
+        else:
+            xx, yy = np.where(dist_mat_leaves == k_idx)
+
+        xx_all = np.concatenate((xx_all, xx))
+        yy_all = np.concatenate((yy_all, yy))
+        kk_all = np.concatenate((kk_all,
+                                 np.array([k_idx]*np.int(xx.shape[0]),
+                                          dtype = np.int)
+                                 ))
+
+    inner_sparse = sparse.COO(
+                              coords = [kk_all, xx_all, yy_all],
+                              data = 1,
+                              shape = (np.max(dist_mat_leaves)+1,
+                                       dist_mat_leaves.shape[0],
+                                       dist_mat_leaves.shape[1]))
+    Gamma = (inner_sparse @ ny_leaf_original).T
+    eta = (inner_sparse @ n_leaf_original).T
+
+    return Gamma, eta, n_leaf_original, leaf_depth, leaf_impurity
+
+
+def create_Gamma_eta_tree_more_per(tree,
+                      parents_all=False,
+                      dist_mat_style=["standard", "max", "min"]):
+    """
+    creates the Gamma and eta matrices for a single tree, where these two
+    matrices are defined:
+
+    Gamma_il = sum_j II(D_ij = l) n_j y_j
+    eta_il = sum_j II(D_ij = l) n_j
+
+    where n_j, y_j are the number of observations in leaf j and the predicted
+    value associated with  leaf j for regression, or where y_j = p_j, a
+    probably vector associated with leaf j in classification. Note that D_ij
+    is the tree based distance between leaf i and j.
+
+    Arguments:
+    ----------
+    tree : sklearn style tree (DecisionTreeClassifier or DecisionTreeRegressor)
+        grown tree to create distance matrix relative to
+    parents_all : bool
+        logic to instead include all observations with parent of distance k
+        away
+    dist_mat_style : string
+        style of inner-tree distance to use, see *details* in the
+        create_distance_mat_leaves doc-string.
+
+    Returns:
+    --------
+    Gamma : array (n_leaves, maximum depth of tree + 1)
+            (number of classes, n_leaves, maximum depth of tree + 1)
+        see description above
+    eta : array (n_leaves, maximum depth of tree + 1)
+        see description above (also the *level version* of n_leaf_original)
+    n_leaf_original : (n leaves, )
+        number of observations that fell into the leaf
+    leaf_depth : array (n_leaves, )
+        depth of each leaf
+    leaf_impurity : array (n_leaves, )
+        impurity for each leaf based on tree criterion (default is 'gini' for
+        classification, 'mse' for regression)
+    leaf_depth_full : array (n_leaves, maximum depth of tree + 1)
+        the *level version* of leaf_depth
+    leaf_impurity_full : array (n_leaves, maximum depth of tree + 1)
+        the *level version* of leaf_impurity
+    Notes:
+    ------
+    When we say "the level version", we mean the value of that metric at
+    x-levels above. In this definition, if we want to look at any levels
+    greater than the leaf's depth we examine the value relative to the root
+    node
+    """
+
+    if type(tree) is sklearn.tree.tree.DecisionTreeRegressor:
+
+        n_leaf_original = tree.tree_.weighted_n_node_samples[
+                                    tree.tree_.children_left == -1]
+        yhat_leaf_original = tree.tree_.value.ravel()[
+                                    tree.tree_.children_left == -1]
+        ny_leaf_original = n_leaf_original * yhat_leaf_original
+
+        leaf_impurity = tree.tree_.impurity[tree.tree_.children_left == -1]
+
+    elif type(tree) is sklearn.tree.tree.DecisionTreeClassifier:
+
+        n_leaf_original = tree.tree_.weighted_n_node_samples[
+                                tree.tree_.children_left == -1]
+        ny_leaf_original = tree.tree_.value[
+                                tree.tree_.children_left == -1,:,:].reshape(
+                                                    n_leaf_original.shape[0],
+                                                    tree.tree_.value.shape[-1])
+
+        leaf_impurity = tree.tree_.impurity[tree.tree_.children_left == -1]
+        # yhat_leaf_original = np.diag(1/n_leaf_original) @ ny_leaf_original
+
+    else:
+        ValueError("tree needs either be a "+\
+                   "sklearn.tree.tree.DecisionTreeClassifier "+\
+                   "or a sklearn.tree.tree.DecisionTreeRegressor")
+
+    ############################
+    # Depth per leaf gathering #
+    ############################
+
+    decision_mat_leaves, _ = create_decision_per_leafs(tree)
+
+    Q = decision_mat_leaves @ decision_mat_leaves.T
+
+    if type(Q) is scipy.sparse.coo.coo_matrix or \
+        type(Q) is scipy.sparse.csr.csr_matrix:
+        leaf_depth = np.diagonal(Q.todense()) - 1
+    else:
+        leaf_depth = np.diagonal(Q) - 1
+
+    ##############################
+    ## Distance Matrix Creation ##
+    ##############################
+
+
+    dist_mat_leaves = create_distance_mat_leaves(tree,
+                                    decision_mat_leaves = decision_mat_leaves,
+                                    style = dist_mat_style)
+
+    ##########################
+    # Gamma and Eta Creation #
+    ##########################
+
+    # creating a 3d sparse array
+    xx_all = np.zeros(shape = (0,))
+    yy_all = np.zeros(shape = (0,))
+    kk_all = np.zeros(shape = (0,))
+
+
+    for k_idx in np.arange(np.min(dist_mat_leaves), np.max(dist_mat_leaves)+1):
+        if parents_all:
+            xx, yy = np.where(dist_mat_leaves <= k_idx)
+        else:
+            xx, yy = np.where(dist_mat_leaves == k_idx)
+
+        xx_all = np.concatenate((xx_all, xx))
+        yy_all = np.concatenate((yy_all, yy))
+        kk_all = np.concatenate((kk_all,
+                                 np.array([k_idx]*np.int(xx.shape[0]),
+                                          dtype = np.int)
+                                 ))
+
+    inner_sparse = sparse.COO(
+                              coords = [kk_all, xx_all, yy_all],
+                              data = 1,
+                              shape = (np.max(dist_mat_leaves)+1,
+                                       dist_mat_leaves.shape[0],
+                                       dist_mat_leaves.shape[1]))
+    Gamma = (inner_sparse @ ny_leaf_original).T
+    eta = (inner_sparse @ n_leaf_original).T
+
+
+    ######################
+    # changing per level #
+    ######################
+
+    ### leaf_depth per level (leaf_depth_full)
+
+    # note this is 1 less than those of the leaf_depth ...
+    leaf_depth_full = np.zeros((leaf_depth.shape[0],Gamma.shape[-1]))
+    for row_idx in range(leaf_depth.shape[0]):
+        leaf_depth_full[row_idx,:np.int(leaf_depth[row_idx] + 1)] = \
+            np.arange(np.int(leaf_depth[row_idx] + 1))[::-1]
+
+    ### n_leaf_original per level (eta)
+
+    ### leaf_impurity per level (leaf_impurity_full)
+    _, parent_mat = depth_per_node_plus_parent(tree)
+    impurity_full = tree.tree_.impurity[parent_mat]
+    leaf_impurity_full = impurity_full[tree.tree_.children_left == -1,:]
+
+    return Gamma, eta, n_leaf_original, leaf_depth, \
+        leaf_impurity, leaf_depth_full, leaf_impurity_full
+
+
+
+def depth_per_node_plus_parent(tree):
+    """
+    calculcates depth per node in binary tree and provides parents index
+
+    Arguments:
+    ----------
+    tree :
+        tree object with the same structure as
+        `sklearn.ensemble.DecisionTreeClassifier`
+
+    Returns:
+    --------
+    depth_vec : int array (n_nodes, )
+        vector of depth for each node
+    parent_mat : int array (n_nodes, max_depth + 1)
+        array of parents of each node k levels up
+    """
+
+    c_left  = tree.tree_.children_left
+    c_right = tree.tree_.children_right
+    T = len(c_left)
+
+    depth_vec = np.zeros(T)
+    parent_list = [[0] for i in np.arange(T)]
+
+    for split in np.arange(T, dtype = np.int):
+        if split > 0:
+            parent_list[split] = parent_list[split] + [split]
+        if c_left[split] != -1:
+            depth_vec[c_left[split]] += depth_vec[split] + 1
+            if split > 0:
+                parent_list[c_left[split]] = parent_list[split]
+        if c_right[split] != -1:
+            depth_vec[c_right[split]] += depth_vec[split] + 1
+            if split > 0:
+                parent_list[c_right[split]] = parent_list[split]
+
+    max_depth = np.max(depth_vec)
+    parent_mat = np.array([[0] * np.int(max_depth+1 -len(x)) + x
+                                for x in parent_list])[:,::-1]
+
+    return depth_vec, parent_mat
+
+
+
+
+
+def create_Gamma_eta_forest_more(forest, verbose=False, parents_all=False,
+                            dist_mat_style=["standard", "max", "min"]):
+    """
+    creates the Gamma and eta matrices for a forest (aka set of trees, where
+    these two matrices are defined (per tree):
+
+    Gamma_il = sum_j II(D_ij = l) n_j y_j
+    eta_il = sum_j II(D_ij = l) n_j
+
+    where n_j, y_j are the number of observations in leaf j and the predicted
+    value associated with with leaf j for regression, or where y_j = p_j, a
+    probably vector associated with leaf j in classification. Note that
+    D_ij is the tree based distance between leaf i and j.
+
+    Arguments:
+    ----------
+    forest : sklearn forest (sklearn.ensemble.forest.RandomForestRegressor or
+             sklearn.ensemble.forest.RandomForestClassifier)
+        grown forest
+    verbose : bool
+        logic to show tree analysis process
+    parents_all : bool
+        logic to instead include all observations with parent of distance k
+        away
+   dist_mat_style : string
+        style of inner-tree distance to use, see *details* in the
+        create_distance_mat_leaves doc-string.
+
+    Returns:
+    --------
+    Gamma_all : array (sum_{t=1}^T n_leaves(t), maximum depth of forest + 1) or
+                (num_classes, sum_{t=1}^T n_leaves(t),
+                 maximum depth of forest + 1)
+        A horizontal stacking of Gamma matrices as defined above for all trees
+        in the forest. (Regression and Classification is different)
+    eta_all : array (sum_{t=1}^T n_leaves(t), maximum depth of forest + 1)
+        A horizontal stacking of eta matrices as defined above for all trees
+        in the forest. (also the *level version* of n_leaf_original)
+    t_idx_all : int array (sum_{t=1}^T n_leaves(t), )
+        integer array will holds which tree in the forest the associated row
+        of Gamma_all or eta_all comes from
+
+    num_leaf : int array (sum_{t=1}^T n_leaves(t), )
+        number of observations that fell into the leaf
+    depth_leaf : int array (sum_{t=1}^T n_leaves(t), )
+        depth of each leaf
+    impurity_leaf: :  array (sum_{t=1}^T n_leaves(t), )
+        impurity for each leaf based on tree criterion (default is 'gini' for
+        classification, 'mse' for regression)
+    depth_full : array (sum_{t=1}^T n_leaves(t), maximum depth of forest + 1)
+        the *level version* of leaf_depth
+    impurity_full : array (sum_{t=1}^T n_leaves(t), maximum depth of forest +1)
+        the *level version* of leaf_impurity
+    """
+
+    _, max_depth = calc_depth_for_forest(forest, verbose = False) # techincally repeats 1/2 the calculations in depth_per_node_plus_parent
+
+    if type(forest) is sklearn.ensemble.forest.RandomForestRegressor:
+        Gamma_all = np.zeros(shape=(0, np.int(max_depth + 1)))
+        g_idx = 1
+    elif type(forest) is sklearn.ensemble.forest.RandomForestClassifier:
+        num_class = forest.n_classes_
+        Gamma_all = np.zeros(shape=(num_class, 0, np.int(max_depth + 1)))
+        g_idx = 2
+    else:
+        ValueError("random_forest needs to be either a " +\
+                   "sklearn.ensemble.forest.RandomForestClassifier " +\
+                   "or a sklearn.ensemble.forest.RandomForestRegressor")
+
+    eta_all = np.zeros(shape = (0, np.int(max_depth + 1)))
+    depth_full = np.zeros(shape = (0, np.int(max_depth + 1)))
+    impurity_full = np.zeros(shape = (0, np.int(max_depth + 1)))
+
+    t_idx_all = np.zeros(shape = (0,))
+    num_leaf = np.zeros(shape = (0,))
+    depth_leaf = np.zeros(shape = (0,))
+    impurity_leaf = np.zeros(shape = (0,))
+
+
+    first_iter = enumerate(forest.estimators_)
+
+    if verbose:
+        bar = progressbar.ProgressBar()
+        first_iter = bar(list(first_iter))
+
+    for t_idx, tree in first_iter:
+        g, n, ln, ld, li, fd, fi = create_Gamma_eta_tree_more_per(tree,
+                                     parents_all=parents_all,
+                                     dist_mat_style=dist_mat_style)
+
+        tree_n_leaf = g.shape[g_idx - 1]
+        if g.shape[g_idx] != Gamma_all.shape[g_idx]:
+            #^ needs to elements before concat
+            diff = Gamma_all.shape[g_idx] - g.shape[g_idx]
+
+            if g_idx == 1: # regressor
+                g = np.hstack((g, np.zeros((tree_n_leaf, diff))))
+            else: # classifier
+                g = np.concatenate((g,
+                                      np.zeros((num_class,
+                                                tree_n_leaf,
+                                                diff))),
+                                    axis = 2)
+
+
+            n = np.hstack((n, np.zeros((tree_n_leaf, diff))))
+            fd = np.hstack((fd, np.zeros((tree_n_leaf, diff))))
+            i_top = fi[0,0]
+            fi = np.hstack((fi, i_top * np.ones((tree_n_leaf, diff))))
+
+
+        if g_idx == 1: # regressor
+            Gamma_all = np.concatenate((Gamma_all, g))
+        else: # classifier
+            Gamma_all = np.concatenate((Gamma_all, g), axis = 1)
+
+        eta_all = np.concatenate((eta_all, n))
+        depth_full = np.concatenate((depth_full, fd))
+        impurity_full = np.concatenate((impurity_full, fi))
+
+        t_idx_all = np.concatenate((t_idx_all,
+                                    t_idx * np.ones(tree_n_leaf,
+                                                    dtype = np.int)))
+        num_leaf = np.concatenate((num_leaf,
+                                   ln))
+        depth_leaf = np.concatenate((depth_leaf,
+                                   ld))
+        impurity_leaf = np.concatenate((impurity_leaf,
+                                   li))
+
+    return Gamma_all, eta_all, t_idx_all, num_leaf, depth_leaf, impurity_leaf,\
+        depth_full, impurity_full
 
 

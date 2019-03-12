@@ -34,7 +34,7 @@ from smooth_rf import depth_per_node, create_Gamma_eta_forest
 
 def make_Vt_mat(random_forest, data, verbose = True, depth_dict = None):
     """
-    makes set of V_{t,\lambda} matrices for a random forest
+    makes set of V_{t,lambda} matrices for a random forest
     """
     n_tree = random_forest.n_estimators
     forest = random_forest.estimators_
@@ -57,7 +57,7 @@ def make_Vt_mat(random_forest, data, verbose = True, depth_dict = None):
 
 def _make_Vt_mat_tree(tree, data, depth_vec = None):
     """
-    makes a set of V_{t,\lambda} matrices for a specific tree
+    makes a set of V_{t,lambda} matrices for a specific tree
     in a random forest (index t)
     """
     if depth_vec is None:
@@ -182,7 +182,7 @@ def make_kernel(Ut_prime_dict, lamb_vec = None):
         t_mean[t_idx] = Ut_prime_dict[t_idx].sum(axis = 0)/\
                             Ut_prime_dict[t_idx].shape[0]
 
-    Kmat = 0 # not useful, but tests don't like Kmat not being defined
+    K_mat = 0 # not useful, but tests don't like Kmat not being defined
     # before the "for" statement below
 
     for t_idx in t_mean.keys():

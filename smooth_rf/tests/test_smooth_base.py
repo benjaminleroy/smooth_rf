@@ -330,7 +330,7 @@ def test_create_Gamma_eta_tree_regression():
 
     # static check
 
-   # tree structure:
+    # tree structure:
     # ~upper: left, lower: right~
     #                       num obs
     #    |--1                   10
@@ -448,7 +448,7 @@ def test_create_Gamma_eta_tree_classification():
 
     # static check
 
-   # tree structure:
+    # tree structure:
     # ~upper: left, lower: right~
     #                       num obs     class 1   class 2
     #    |--1                   10          5       5
@@ -1081,6 +1081,9 @@ def test_take_gradient_ce():
 
 
 def test_l2_s_grad_for_adam_wrapper():
+    """
+    test l2_s_grad_for_adam_wrapper
+    """
     n = 200
     min_size_leaf = 1
 
@@ -1125,6 +1128,9 @@ def test_l2_s_grad_for_adam_wrapper():
 
 
 def test_ce_s_grad_for_adam_wrapper():
+    """
+    test ce_s_grad_for_adam_wrapper
+    """
     n = 200
     min_size_leaf = 1
 
