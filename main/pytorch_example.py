@@ -462,10 +462,10 @@ for sim in np.arange(2):
     y_pred_test_base = random_forest.predict(data_test)
     y_pred_test_smooth = smooth_rf_pytorch.predict(data_test)
 
-    base_error.append(l2_np(y_pred_test_base, y_test))
-    smooth_error.append(l2_np(y_pred_test_smooth, y_test))
-    base_acc.append(acc_np(y_pred_test_base, y_test))
-    smooth_acc.append(acc_np(y_pred_test_smooth, y_test))
+    base_error.append(smooth_rf.l2_np(y_pred_test_base, y_test))
+    smooth_error.append(smooth_rf.l2_np(y_pred_test_smooth, y_test))
+    base_acc.append(smooth_rf.acc_np(y_pred_test_base, y_test))
+    smooth_acc.append(smooth_rf.acc_np(y_pred_test_smooth, y_test))
     print(base_acc[sim], smooth_acc[sim])
 
 csv_out_pd = pd.DataFrame(data = {"base l2": base_error,
