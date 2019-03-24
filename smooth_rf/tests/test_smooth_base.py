@@ -535,6 +535,7 @@ def test_create_Gamma_eta_forest_regression():
     compares to what is expected to be returned from create_Gamma_eta_tree -
     mostly just structurally
     """
+    # parent = F
     n = 200
     n_tree = 10
     min_size_leaf = 1
@@ -551,13 +552,16 @@ def test_create_Gamma_eta_forest_regression():
     g, n, t = smooth_rf.create_Gamma_eta_forest(random_forest)
 
     assert g.shape == n.shape, \
-        "Gamma and eta matrices are not the correct shared size"
+        "Gamma and eta matrices are not the correct shared size "+\
+        "(parents_all = False)"
     assert g.shape[0] == t.shape[0], \
-        "the tree index vector doesn't have the correct number of observations"
+        "the tree index vector doesn't have the correct number of observations "+\
+        "(parents_all = False)"
 
     assert np.all(
         np.array(list(dict(Counter(t)).keys())) == np.arange(n_tree)),\
-        "tree index doesn't contain expected tree index values"
+        "tree index doesn't contain expected tree index values "+\
+        "(parents_all = False)"
 
     for t_idx, tree in enumerate(random_forest.estimators_):
         max_depth_range = np.int(np.max(smooth_rf.depth_per_node(tree)) + 1)
@@ -565,23 +569,96 @@ def test_create_Gamma_eta_forest_regression():
 
         assert G_tree.shape[0] == np.sum(t == t_idx), \
             "shape of single Gamma from create_Gamma_eta_tree" +\
-            "does not match structure from t_idx output"
+            "does not match structure from t_idx output "+\
+            "(parents_all = False)"
 
         assert np.all(G_tree == g[t==t_idx,:][:,:max_depth_range]), \
-            "doesn't match create_Gamma_eta_tree function for Gamma"
+            "doesn't match create_Gamma_eta_tree function for Gamma "+\
+            "(parents_all = False)"
         if max_depth_range != g.shape[1]:
             assert np.all(g[t==t_idx,][:,max_depth_range:] == 0), \
                 "extra dimensions, based on the global forest having larger" +\
                 "depth than the individual tree (num %d) in Gamma are "+\
-                "non-zero" %t_idx
+                "non-zero (parents_all = False)" %t_idx
 
         assert np.all(n_tree == n[t==t_idx,:][:,:max_depth_range]), \
-            "doesn't match create_Gamma_eta_tree function for eta"
+            "doesn't match create_Gamma_eta_tree function for eta " +\
+            "(parents_all = False"
         if max_depth_range != g.shape[1]:
             assert np.all(n[t==t_idx,][:,max_depth_range:] == 0), \
                 "extra dimensions, based on the global forest having larger" +\
                 "depth than the individual tree (num %d) in eta are "+\
-                "non-zero" %t_idx
+                "non-zero (parents_all = False)" %t_idx
+
+    # parent = T
+    n = 200
+    n_tree = 10
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    rf_class = sklearn.ensemble.RandomForestRegressor(n_estimators = n_tree,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    g, n, t = smooth_rf.create_Gamma_eta_forest(random_forest,
+                                                parents_all=True)
+
+    assert g.shape == n.shape, \
+        "Gamma and eta matrices are not the correct shared size "+\
+        "(parents_all = True)"
+    assert g.shape[0] == t.shape[0], \
+        "the tree index vector doesn't have the correct number of observations "+\
+        "(parents_all = True)"
+
+    assert np.all(
+        np.array(list(dict(Counter(t)).keys())) == np.arange(n_tree)),\
+        "tree index doesn't contain expected tree index values "+\
+        "(parents_all = True)"
+
+    for t_idx, tree in enumerate(random_forest.estimators_):
+        max_depth_range = np.int(np.max(smooth_rf.depth_per_node(tree)) + 1)
+        G_tree, n_tree = smooth_rf.create_Gamma_eta_tree(tree,
+                                                         parents_all=True)
+
+        assert G_tree.shape[0] == np.sum(t == t_idx), \
+            "shape of single Gamma from create_Gamma_eta_tree" +\
+            "does not match structure from t_idx output "+\
+            "(parents_all = True)"
+
+        assert np.all(G_tree == g[t==t_idx,:][:,:max_depth_range]), \
+            "doesn't match create_Gamma_eta_tree function for Gamma "+\
+            "(parents_all = True)"
+
+        if max_depth_range != g.shape[1]:
+            for _ in range(5):
+                idx = np.random.choice(np.int(g.shape[1] - max_depth_range))+\
+                         max_depth_range
+                assert np.all(g[t==t_idx,][:,idx] == \
+                              g[t==t_idx,][:, max_depth_range]), \
+                    "extra dimensions, based on the global forest having larger" +\
+                    "depth than the individual tree (num %d) in Gamma are "+\
+                    "equal to the last column of tree Gamma "+\
+                    "(parents_all = True)" %t_idx
+
+        assert np.all(n_tree == n[t==t_idx,:][:,:max_depth_range]), \
+            "doesn't match create_Gamma_eta_tree function for eta " +\
+            "(parents_all = True)"
+        if max_depth_range != g.shape[1]:
+            for _ in range(5):
+                idx = np.random.choice(np.int(g.shape[1] - max_depth_range))+\
+                         max_depth_range
+                assert np.all(n[t==t_idx,][:,idx] == \
+                              n[t==t_idx,][:, max_depth_range]), \
+                    "extra dimensions, based on the global forest having larger" +\
+                    "depth than the individual tree (num %d) in eta are "+\
+                    "equal to the last column of tree eta "+\
+                    "(parents_all = True)" %t_idx
+
+
 
 def test_create_Gamma_eta_forest_classification():
     """
@@ -592,6 +669,7 @@ def test_create_Gamma_eta_forest_classification():
 
 
     """
+    # parent = F
     n = 200
     n_tree = 10
     min_size_leaf = 1
@@ -616,15 +694,19 @@ def test_create_Gamma_eta_forest_classification():
     g, n, t = smooth_rf.create_Gamma_eta_forest(random_forest)
 
     assert g.shape[1:] == n.shape, \
-        "Gamma and eta matrices are not the correct shared size"
+        "Gamma and eta matrices are not the correct shared size" +\
+            "(parents_all = False)"
     assert g.shape[1] == t.shape[0], \
-        "the tree index vector doesn't have the correct number of observations"
+        "the tree index vector doesn't have the correct number of observations" +\
+            "(parents_all = False)"
     assert g.shape[0] == num_classes, \
-        "Gamma matrix dimensions don't match the number of classes correctly"
+        "Gamma matrix dimensions don't match the number of classes correctly" +\
+            "(parents_all = False)"
 
     assert np.all(
         np.array(list(dict(Counter(t)).keys())) == np.arange(n_tree)),\
-        "tree index doesn't contain expected tree index values"
+        "tree index doesn't contain expected tree index values" +\
+            "(parents_all = False)"
 
     for t_idx, tree in enumerate(random_forest.estimators_):
         max_depth_range = np.int(np.max(smooth_rf.depth_per_node(tree)) + 1)
@@ -632,23 +714,104 @@ def test_create_Gamma_eta_forest_classification():
 
         assert G_tree.shape[1] == np.sum(t == t_idx), \
             "shape of single Gamma from create_Gamma_eta_tree" +\
-            "does not match structure from t_idx output"
+            "does not match structure from t_idx output" +\
+            "(parents_all = False)"
 
         assert np.all(G_tree == g[:,t==t_idx,:][:,:,:max_depth_range]), \
-            "doesn't match create_Gamma_eta_tree function for Gamma"
-        if max_depth_range != g.shape[1]:
+            "doesn't match create_Gamma_eta_tree function for Gamma" +\
+            "(parents_all = False)"
+        if max_depth_range != g.shape[2]:
             assert np.all(g[:,t==t_idx,][:,:,max_depth_range:] == 0), \
                 "extra dimensions, based on the global forest having larger" +\
                 "depth than the individual tree (num %d) in Gamma are "+\
-                "non-zero" %t_idx
+                "non-zero (parents_all = False)"%t_idx
 
         assert np.all(n_tree == n[t==t_idx,:][:,:max_depth_range]), \
-            "doesn't match create_Gamma_eta_tree function for eta"
-        if max_depth_range != g.shape[1]:
+            "doesn't match create_Gamma_eta_tree function for eta" +\
+            "(parents_all = False)"
+        if max_depth_range != g.shape[2]:
             assert np.all(n[t==t_idx,][:,max_depth_range:] == 0), \
                 "extra dimensions, based on the global forest having larger" +\
                 "depth than the individual tree (num %d) in eta are "+\
-                "non-zero" %t_idx
+                "non-zero (parents_all = False)" %t_idx
+    # parent = T
+    n = 200
+    n_tree = 10
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    y_cat = np.array(
+                     pd.cut(y, bins = 5, labels = np.arange(5, dtype = np.int)),
+                     dtype = np.int)
+
+    y = y_cat
+
+    num_classes = len(Counter(y_cat).keys())
+
+    rf_class = sklearn.ensemble.RandomForestClassifier(n_estimators = n_tree,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    g, n, t = smooth_rf.create_Gamma_eta_forest(random_forest,
+                                                parents_all=True)
+
+    assert g.shape[1:] == n.shape, \
+        "Gamma and eta matrices are not the correct shared size" +\
+            "(parents_all = True)"
+    assert g.shape[1] == t.shape[0], \
+        "the tree index vector doesn't have the correct number of observations" +\
+            "(parents_all = True)"
+    assert g.shape[0] == num_classes, \
+        "Gamma matrix dimensions don't match the number of classes correctly" +\
+            "(parents_all = True)"
+
+    assert np.all(
+        np.array(list(dict(Counter(t)).keys())) == np.arange(n_tree)),\
+        "tree index doesn't contain expected tree index values" +\
+            "(parents_all = True)"
+
+    for t_idx, tree in enumerate(random_forest.estimators_):
+        max_depth_range = np.int(np.max(smooth_rf.depth_per_node(tree)) + 1)
+        G_tree, n_tree = smooth_rf.create_Gamma_eta_tree(tree,
+                                                         parents_all=True)
+
+        assert G_tree.shape[1] == np.sum(t == t_idx), \
+            "shape of single Gamma from create_Gamma_eta_tree" +\
+            "does not match structure from t_idx output" +\
+            "(parents_all = True)"
+
+        assert np.all(G_tree == g[:,t==t_idx,:][:,:,:max_depth_range]), \
+            "doesn't match create_Gamma_eta_tree function for Gamma" +\
+            "(parents_all = True)"
+        if max_depth_range != g.shape[2]:
+            for _ in range(5):
+                idx = np.random.choice(np.int(g.shape[2] - max_depth_range))+\
+                         max_depth_range
+                assert np.all(g[:,t==t_idx,:][:,:,idx] == \
+                              g[:,t==t_idx,:][:,:,max_depth_range]), \
+                    "extra dimensions, based on the global forest having larger" +\
+                    "depth than the individual tree (num %d) in Gamma are "+\
+                    "equal to the last column of tree Gamma "+\
+                    "(parents_all = True)" %t_idx
+
+        assert np.all(n_tree == n[t==t_idx,:][:,:max_depth_range]), \
+            "doesn't match create_Gamma_eta_tree function for eta" +\
+            "(parents_all = True)"
+        if max_depth_range != g.shape[2]:
+            for _ in range(5):
+                idx = np.random.choice(np.int(g.shape[2] - max_depth_range))+\
+                         max_depth_range
+                assert np.all(n[t==t_idx,][:,idx] == \
+                              n[t==t_idx,][:,max_depth_range]), \
+                    "extra dimensions, based on the global forest having larger" +\
+                    "depth than the individual tree (num %d) in eta are "+\
+                    "equal to the last column of tree eta "+\
+                    "(parents_all = True)" %t_idx
+
 
 
 def test_smooth_classifier():

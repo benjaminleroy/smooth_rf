@@ -510,16 +510,34 @@ def create_Gamma_eta_forest(forest, verbose=False, parents_all=False,
         if g.shape[g_idx] != Gamma_all.shape[g_idx]:
             diff = Gamma_all.shape[g_idx] - g.shape[g_idx]
 
-            if g_idx == 1: # regressor
-                g = np.hstack((g, np.zeros((tree_n_leaf, diff))))
-            else: # classifier
-                g = np.concatenate((g,
-                                      np.zeros((num_class,
-                                                tree_n_leaf,
-                                                diff))),
-                                    axis = 2)
 
-            n = np.hstack((n, np.zeros((tree_n_leaf, diff))))
+            if parents_all:
+                if g_idx == 1: # regressor
+                    extra = np.tile(g[:,g.shape[1] - 1].reshape((-1,1)),
+                                    (1,diff))
+
+                    g = np.hstack((g, extra))
+                else: # classifier
+                    extra = np.tile(
+                        g[:,:,g.shape[2] - 1].reshape((g.shape[0], g.shape[1],1)),
+                            (1,1,diff))
+                    g = np.concatenate((g, extra),
+                                        axis = 2)
+            else:
+                if g_idx == 1: # regressor
+                    g = np.hstack((g, np.zeros((tree_n_leaf, diff))))
+                else: # classifier
+                    g = np.concatenate((g,
+                                          np.zeros((num_class,
+                                                    tree_n_leaf,
+                                                    diff))),
+                                        axis = 2)
+            if parents_all:
+                extra = np.tile(n[:,n.shape[1] - 1].reshape((-1,1)),
+                                    (1,diff))
+                n = np.hstack((n, extra))
+            else:
+                n = np.hstack((n, np.zeros((tree_n_leaf, diff))))
 
         if g_idx == 1: # regressor
             Gamma_all = np.concatenate((Gamma_all, g))
@@ -2001,17 +2019,34 @@ def create_Gamma_eta_forest_more(forest, verbose=False, parents_all=False,
             #^ needs to elements before concat
             diff = Gamma_all.shape[g_idx] - g.shape[g_idx]
 
-            if g_idx == 1: # regressor
-                g = np.hstack((g, np.zeros((tree_n_leaf, diff))))
-            else: # classifier
-                g = np.concatenate((g,
-                                      np.zeros((num_class,
-                                                tree_n_leaf,
-                                                diff))),
-                                    axis = 2)
+            if parents_all:
+                if g_idx == 1: # regressor
+                    extra = np.tile(g[:,g.shape[1] - 1].reshape((-1,1)),
+                                    (1,diff))
 
+                    g = np.hstack((g, extra))
+                else: # classifier
+                    extra = np.tile(
+                        g[:,:,g.shape[2] - 1].reshape((g.shape[0], g.shape[1],1)),
+                            (1,1,diff))
+                    g = np.concatenate((g, extra),
+                                        axis = 2)
+            else:
+                if g_idx == 1: # regressor
+                    g = np.hstack((g, np.zeros((tree_n_leaf, diff))))
+                else: # classifier
+                    g = np.concatenate((g,
+                                          np.zeros((num_class,
+                                                    tree_n_leaf,
+                                                    diff))),
+                                        axis = 2)
+            if parents_all:
+                extra = np.tile(n[:,n.shape[1] - 1].reshape((-1,1)),
+                                    (1,diff))
+                n = np.hstack((n, extra))
+            else:
+                n = np.hstack((n, np.zeros((tree_n_leaf, diff))))
 
-            n = np.hstack((n, np.zeros((tree_n_leaf, diff))))
             fd = np.hstack((fd, np.zeros((tree_n_leaf, diff))))
             i_top = fi[0,0]
             fi = np.hstack((fi, i_top * np.ones((tree_n_leaf, diff))))
