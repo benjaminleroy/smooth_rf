@@ -550,7 +550,7 @@ def weighted_l2(y_item, y_pred, weights):
     loss : torch scalar
         l2 loss
     """
-    loss = torch.mean( weights * (y_item - y_pred)**2)
+    loss = torch.sum( weights * (y_item - y_pred)**2) / torch.sum( weights )
     return loss
 
 def weighted_l2_np(y, y_pred, weights):
@@ -572,7 +572,7 @@ def weighted_l2_np(y, y_pred, weights):
     loss : scalar
         l2 loss
     """
-    loss = np.sum(weights * (y - y_pred)**2)
+    loss = np.sum(weights * (y - y_pred)**2)/np.sum(weights)
     return loss
 
 def l2_np(y, y_pred):

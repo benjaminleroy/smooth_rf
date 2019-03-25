@@ -230,7 +230,7 @@ def test_SoftmaxTreeFit():
         weights_item = weights_item.reshape((1, weights_item.shape[0]))
         softmax_structure_item = softmax_structure_item.reshape((1, *softmax_structure_item.shape))
 
-        yhat_item, weights_item = smoothing_model.forward(
+        yhat_item, weights_item, _ = smoothing_model.forward(
                                         (y_item, Gamma_item,
                                          eta_item, weights_item,
                                          softmax_structure_item))
@@ -248,7 +248,8 @@ def test_weighted_l2():
     for _ in range(5):
         y, y_pred, weights = torch.rand(5), torch.rand(5), torch.rand(5)
         loss = smooth_rf.weighted_l2(y,y_pred,weights).item()
-        assert loss == np.sum(weights.numpy() * (y.numpy() - y_pred.numpy())**2),\
+        assert loss == np.sum(weights.numpy() * (y.numpy() - y_pred.numpy())**2) /\
+            np.sum(weights.numpy()),\
             "weighted l2 loss is different than expected"
 def test_weighted_l2_np():
     """
