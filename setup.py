@@ -15,6 +15,7 @@ setup(name='smooth_rf',
       packages=['smooth_rf'],
       install_requires=[
           'numpy', 'sparse', 'scipy', 'sklearn',
+          'torch', # for pytorch approach
           'quadprog',  # used for smooth_level (remove in the future)
           'progressbar2', 'matplotlib' # this line is less "needed"
       ],
