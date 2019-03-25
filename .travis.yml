@@ -5,7 +5,11 @@ python:
 install:
   - pip install Cython --install-option="--no-cython-compile"
   - if [[ $TRAVIS_PYTHON_VERSION == 3.6 ]]; then pip install https://download.pytorch.org/whl/cpu/torch-1.0.0-cp36-cp36m-linux_x86_64.whl; fi
+  - pip install python-coveralls
   - pip install -r test_requirements.txt
   - pip install .
 # run tests
 script: nosetests
+
+after_success:
+  - coveralls
