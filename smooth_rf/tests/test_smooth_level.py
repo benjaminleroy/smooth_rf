@@ -154,13 +154,19 @@ def test_make_kernel():
 
     Ut_prime_dict = smooth_rf.remove_0_from_Ut_prime(Ut_prime_dict)
 
-    K_mat = smooth_rf.make_kernel(Ut_prime_dict)
+    if len(Ut_prime_dict) > 0:
+        K_mat = smooth_rf.make_kernel(Ut_prime_dict)
 
-    assert K_mat.shape[0:2] == (K_mat.shape[0],K_mat.shape[0]), \
-        "returned K matrix is not symmetric when the inputs were."
+        assert K_mat.shape[0:2] == (K_mat.shape[0],K_mat.shape[0]), \
+            "returned K matrix is not symmetric when the inputs were."
 
-    assert len(K_mat.shape) == 2, \
-        "returned K matrix is not 2d as expected."
+        assert len(K_mat.shape) == 2, \
+            "returned K matrix is not 2d as expected."
+    else:
+        K_mat = smooth_rf.make_kernel(Ut_prime_dict)
+        assert K_mat == 0, \
+            "when you provide an empty Ut_prime_dict you should get a 0"
+
 
 
 def test_categorical_depth_expand():
@@ -217,22 +223,27 @@ def test_depth_dist():
 
     Ut_prime_dict = smooth_rf.remove_0_from_Ut_prime(Ut_prime_dict)
 
-    K_mat = smooth_rf.make_kernel(Ut_prime_dict)
+    if len(Ut_prime_dict) > 0:
+        K_mat = smooth_rf.make_kernel(Ut_prime_dict)
 
-    DD_mat = smooth_rf.depth_dist(K_mat)
+        DD_mat = smooth_rf.depth_dist(K_mat)
 
-    assert K_mat.shape == DD_mat.shape, \
-        "dimensions between K_mat and DD_mat should be the same"
+        assert K_mat.shape == DD_mat.shape, \
+            "dimensions between K_mat and DD_mat should be the same"
 
-    if type(DD_mat) is sparse.coo.core.COO:
-        assert np.all(np.diag(DD_mat.todense()) == 0), \
-            "diagonal should be naturally 0 (has error)"
+        if type(DD_mat) is sparse.coo.core.COO:
+            assert np.all(np.diag(DD_mat.todense()) == 0), \
+                "diagonal should be naturally 0 (has error)"
+        else:
+            assert np.all(np.diag(DD_mat) == 0), \
+                "diagonal should be naturally 0 (has error)"
+
+        assert np.all(DD_mat >= 0), \
+            "all entries should be positive in DD (has error)"
     else:
-        assert np.all(np.diag(DD_mat) == 0), \
-            "diagonal should be naturally 0 (has error)"
-
-    assert np.all(DD_mat >= 0), \
-        "all entries should be positive in DD (has error)"
+        K_mat = smooth_rf.make_kernel(Ut_prime_dict)
+        assert K_mat == 0, \
+            "when you provide an empty Ut_prime_dict you should get a 0"
 
 
 
