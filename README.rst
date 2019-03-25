@@ -4,6 +4,10 @@
 .. image:: https://travis-ci.com/benjaminleroy/smooth_rf.svg?token=2pSzdX1d2UgeEbzsmGvQ&branch=master
     :target: https://travis-ci.com/benjaminleroy/smooth_rf
 
+.. image:: https://coveralls.io/repos/github/benjaminleroy/smooth_rf/badge.svg?branch=master
+    :target: https://coveralls.io/github/benjaminleroy/smooth_rf?branch=master
+
+
 This repository provides an implimentation of smoothed random forests (cite) in ``python``. Specifically, it provides a ``python`` package that wraps around a |sklearn|_ random forest object, smooths it, and returns an updated random forest object.
 
 .. |sklearn| replace:: ``sklearn``
