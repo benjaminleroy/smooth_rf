@@ -97,6 +97,20 @@ def test_create_Gamma_eta_tree_more_regression():
     # (6) 7 * 4 = 28 | 24            | 18 | 10
 
 
+    # WHEN parent == True
+    # eta
+    # (1) 10 | 10+24 = 34 | 34+0 = 34  | 34+0 = 34
+    # (3) 9  | 15+9 = 24  | 24+10 = 34 | 34+0 = 34
+    # (5) 8  | 8+7 = 15   | 15+9 = 24  | 24+10 = 34
+    # (6) 7  | 8+7 = 15   | 15+9 = 24  | 24+10 = 34
+
+    # Gamma
+    # (1) 10         | 10+(18+24+28) = 80 | 80+0 = 80  | 80+0 = 80
+    # (3) 9 * 2 = 18 | 18+(24+28) = 70    | 70+10 = 80 | 80+0 = 80
+    # (5) 8 * 3 = 24 | 24+28 = 52         | 52+18 = 70 | 70+10 = 80
+    # (6) 7 * 4 = 28 | 28+24 = 52         | 52+18 = 70 | 70+10 = 80
+
+
 
     class inner_fake_tree():
         def __init__(self, nn, cl, cr, v):
@@ -145,6 +159,37 @@ def test_create_Gamma_eta_tree_more_regression():
         "static test's leaf count failed to reproduce correct solutions"
     assert np.all(ld_static == ld_expected), \
         "static test's leaf depth failed to reproduce correct solutions"
+
+    # WHEN parent == true
+    g_static, n_static, ln_static, ld_static, li_static = \
+        smooth_rf.create_Gamma_eta_tree_more(test, parents_all=True)
+
+    n_expected = np.array([[10,34,34,34],
+                           [9,24,34,34],
+                           [8,15,24,34],
+                           [7,15,24,34]])
+    g_expected = np.array([[10,80,80,80],
+                          [18,70,80,80],
+                          [24,52,70,80],
+                          [28,52,70,80]])
+
+    ln_expected = n_expected[:,0]
+    ld_expected = np.array([1,2,3,3])
+
+    assert np.all(g_static == g_expected), \
+        "static test's Gamma failed to reproduce correct solutions, " +\
+        "parent = True"
+    assert np.all(n_static == n_expected), \
+        "static test's eta failed to reproduce correct solutions, " +\
+        "parent = True"
+    assert np.all(ln_static == ln_expected), \
+        "static test's leaf count failed to reproduce correct solutions, " +\
+        "parent = True"
+    assert np.all(ld_static == ld_expected), \
+        "static test's leaf depth failed to reproduce correct solutions, " +\
+        "parent = True"
+
+
 
 
 def test_create_Gamma_eta_tree_more_classification():

@@ -1948,7 +1948,7 @@ def create_Gamma_eta_forest_more(forest, verbose=False, parents_all=False,
     parents_all : bool
         logic to instead include all observations with parent of distance k
         away
-   dist_mat_style : string
+    dist_mat_style : string
         style of inner-tree distance to use, see *details* in the
         create_distance_mat_leaves doc-string.
 
