@@ -5,6 +5,7 @@ python:
 install:
   - pip install Cython --install-option="--no-cython-compile"
   - pip install -r test_requirements.txt
+  - pip install torch --progress-bar off
   - pip install .
 # run tests
 script: nosetests
