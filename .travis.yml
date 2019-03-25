@@ -4,7 +4,7 @@ python:
 
 install:
   - pip install Cython --install-option="--no-cython-compile"
-  - pip install torch --install-option="--progress-bar off"
+  - if [[ $TRAVIS_PYTHON_VERSION == 3.6 ]]; then pip install https://download.pytorch.org/whl/cpu/torch-1.0.0-cp36-cp36m-linux_x86_64.whl; fi
   - pip install -r test_requirements.txt
   - pip install .
 # run tests
