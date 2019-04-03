@@ -251,6 +251,7 @@ def test_weighted_l2():
         assert loss == np.sum(weights.numpy() * (y.numpy() - y_pred.numpy())**2) /\
             np.sum(weights.numpy()),\
             "weighted l2 loss is different than expected"
+
 def test_weighted_l2_np():
     """
     test of weighted_l2_np
@@ -261,6 +262,7 @@ def test_weighted_l2_np():
         assert smooth_rf.weighted_l2_np(y.numpy(), y_pred.numpy(), weights.numpy()) == \
             loss, \
             "numpy version of weighted_l2 differs from torch version"
+
 def test_l2_np():
     """
     test of l2_np
@@ -281,6 +283,169 @@ def test_acc_np():
         loss = smooth_rf.acc_np(y,y_pred)
         assert loss == np.mean(y == y_pred),\
             "acc_np doesn't correctly calculate classification accuracy"
+
+
+def test_node_spatial_structure_update():
+    """
+    test node_spatial_structure_update function
+    """
+
+    # random - structure output check
+    # data creation
+    n = 200
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 10), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    rf_class = sklearn.ensemble.RandomForestRegressor(n_estimators = 2,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    _, _, _, _, _, \
+    one_d_dict, two_d_dict, \
+    _, _ = smooth_rf.pytorch_numpy_prep(random_forest,
+                                        X_trained=X,
+                                        y_trained=y,
+                                        verbose=False)
+
+    od, td_ = smooth_rf.node_spatial_structure_update(random_forest, X,
+                                  one_d_dict=dict(),
+                                  two_d_dict=None)
+
+    assert td_ is None, \
+        "we expect no update to the two_d_dict if the input is None"
+
+    assert len(od) == X.shape[1], \
+        "expect the number of additional entries in dictionary to be " +\
+        "the number of columns of X"
+
+    assert set(["center"+str(i)
+               for i in range(X.shape[1])]).issuperset(set(od.keys())) and \
+           set(["center"+str(i)
+               for i in range(X.shape[1])]).issubset(set(od.keys())), \
+        "keys expected by to named 'centerX' where X is an integer " +\
+        "in range(number of columns of X)"
+
+    for key in od.keys():
+        assert one_d_dict["leaf_n"].shape == od[key].shape, \
+            "expected new additions to one_d_dict to be have the same "+\
+            "shape as previously created additions"
+
+
+
+    od_, td = smooth_rf.node_spatial_structure_update(random_forest, X,
+                                  one_d_dict=None,
+                                  two_d_dict=dict())
+
+
+    assert od_ is None, \
+        "we expect no update to the one_d_dict if the input is None"
+
+    assert len(td) == X.shape[1], \
+        "expect the number of additional entries in dictionary to be " +\
+        "the number of columns of X"
+
+    assert set(["center"+str(i)
+               for i in range(X.shape[1])]).issuperset(set(td.keys())) and \
+           set(["center"+str(i)
+               for i in range(X.shape[1])]).issubset(set(td.keys())), \
+        "keys expected by to named 'centerX' where X is an integer " +\
+        "in range(number of columns of X)"
+
+    for key in td.keys():
+        assert two_d_dict["full_d"].shape == td[key].shape, \
+            "expected new additions to one_d_dict to be have the same "+\
+            "shape as previously created additions"
+
+
+    od, td = smooth_rf.node_spatial_structure_update(random_forest, X,
+                                  one_d_dict=dict(),
+                                  two_d_dict=dict())
+
+    assert od is not None and td is not None, \
+        "returned one_d_dict and two_d_dict should not be none if "+\
+        "they were not inputted as None"
+
+    # static check
+
+    # tree structure:
+    # ~upper: left, lower: right~.
+    #                   lower   upper       split  parent centers:
+    #    |--1           0,0    50, 100      -1
+    # -0-|.             0,0     100, 100    0
+    #    |   |--3       50,0    100, 50     -1
+    #    |-2-|          50,0    100,100     1
+    #        |   |--5   50,50   75,100      -1
+    #        |-4-|      50,50   100,100     0
+    #            |--6   75,50   100,100     -1
+
+    # creating desired structure
+    class inner_fake_tree():
+        def __init__(self, cl, cr, f, t):
+            self.children_left = cl
+            self.children_right = cr
+            self.feature = f
+            self.threshold = t
+
+    class fake_tree():
+        def __init__(self, cl, cr, f, t):
+            self.tree_ = inner_fake_tree(cl, cr, f, t)
+            self.__class__ = sklearn.tree.tree.DecisionTreeRegressor
+
+    class fake_forest():
+        def __init__(self, cl, cr, f, t):
+            """
+            creates a forest with 1 tree
+            """
+            self.estimators_ = [fake_tree(cl, cr, f, t)]
+            self.n_estimators = 1
+
+    children_right = np.array([2,-1,4,-1,6,-1,-1], dtype = np.int)
+    children_left = np.array([1,-1,3,-1,5,-1,-1], dtype = np.int)
+    feature = np.array([0,-1,1,-1,0,-1,-1],dtype = np.int)
+    threshold = np.array([50,-1,50,-1,75,-1,-1])
+
+    my_X = np.array([[100,100],
+                     [0, 0]])
+
+    bb_truth = np.array([[[0,0],[100,100]],
+                       [[0,0],[50,100]],
+                       [[50,0],[100,100]],
+                       [[50,0],[100,50]],
+                       [[50,50],[100,100]],
+                       [[50,50],[75,100]],
+                       [[75,50],[100,100]]])
+
+
+
+    cc_truth = bb_truth.mean(axis = 1)
+
+    leaf_info = cc_truth[children_left == -1,:]
+
+    my_forest = fake_forest(children_left,children_right,feature,threshold)
+    od_static, td_static = \
+         smooth_rf.node_spatial_structure_update(my_forest, my_X,
+                                  one_d_dict=dict(),
+                                  two_d_dict=dict())
+
+    assert np.all(leaf_info[:,0] == od_static["center0"]) and \
+        np.all(leaf_info[:,1] == od_static["center1"]), \
+        "static and calculated one_d_dict values differ"
+
+
+    assert np.all(leaf_info[:,0] == td_static["center0"][:,0]) and \
+        np.all(leaf_info[:,1] == td_static["center1"][:,0]), \
+        "static and calculated two_d_dict values differ (first entry)"
+
+    _, par_mat = smooth_rf.depth_per_node_plus_parent(my_forest.estimators_[0])
+    par_mat = par_mat[children_right == -1, :]
+
+    assert np.all(cc_truth[:,0][par_mat] == td_static["center0"]) and \
+        np.all(cc_truth[:,1][par_mat] == td_static["center1"]), \
+        "static and calcuated two_d_dict values differ"
 
 
 # def test_update_rf():

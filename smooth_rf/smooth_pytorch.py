@@ -272,6 +272,117 @@ def pytorch_numpy_prep(random_forest, X_trained, y_trained,
         one_d_dict, two_d_dict, lamb_dim, num_classes
 
 
+def node_spatial_structure_update(random_forest, X_trained,
+                                  one_d_dict=None,
+                                  two_d_dict=None):
+    """
+    updates one_d_dict and/or two_d_dict with center of nodes
+
+    Arguments:
+    ----------
+    random_forest : sklearn forest
+            (sklearn.ensemble.forest.RandomForestRegressor or
+            sklearn.ensemble.forest.RandomForestClassifier)
+        pre-trained classification or regression based random forest
+    X_trained : array (n, p)
+        X data array used to create the inputted random_forest. Note that this
+        is assumed to be the correct data - and is used if the smoothing is
+        preformed with either the oob sample(done by default if X_tune,
+        y_tune are None and resample_tune is False), or another bootstrap
+        sample (done when resample_tune is True).
+        (default is none)
+    one_d_dict : dict with arrays (TN*,)
+        dictionary of one dimensional arrays that relate to the leaves
+        attributes. (Default is None - if None no update is done)
+    two_d_dict : dict with arrays (TN*, K)
+        dictionary of two dimensional arrays that relate to the leaves
+        attributes. (Default is None - if None no update is done)
+
+    Returns:
+    --------
+    one_d_dict : dict
+        updated one_d_dict with addition entries with keys of the form:
+        "center0", ... , "centerK" (where K is max number of dimensions of X)
+    two_d_dict : dict
+        updated two_d_dict with addition entries with keys of the form:
+        "center0", ... , "centerK" (where K is max number of dimensions of X)
+    """
+
+    if one_d_dict is None:
+        if two_d_dict is None:
+            ValueError("either 'one_d_dict' or 'two_d_dict' must not be "+\
+                       "None")
+        else:
+            if type(two_d_dict) is not dict:
+                ValueError("'two_d_dict' must be either None or a dictionary")
+
+    if two_d_dict is None:
+        if type(one_d_dict) is not dict:
+                ValueError("'one_d_dict' must be either None or a dictionary")
+
+
+    n_col = X_trained.shape[1]
+
+    # analysis
+    if one_d_dict is not None:
+        # set up of each dimensions' center
+        for col_num in range(n_col):
+            one_d_dict["center"+str(col_num)] = np.zeros((0,))
+
+        # iterate across trees
+        for tree in random_forest.estimators_:
+            center_t = smooth_rf.center_tree(tree, X_trained)
+            cl = tree.tree_.children_left
+
+            for col_num in range(n_col):
+                one_d_dict["center"+str(col_num)] =\
+                    np.concatenate((one_d_dict["center"+str(col_num)],
+                                    center_t[cl == -1,:][:,col_num]))
+
+
+
+
+    if two_d_dict is not None:
+        _, max_depth = smooth_rf.calc_depth_for_forest(random_forest,
+                                                       verbose = False) # techincally repeats 1/2 the calculations in depth_per_node_plus_parent
+        max_depth = np.int(max_depth) + 1
+        # set up of each dimensions' center
+        for col_num in range(n_col):
+            two_d_dict["center"+str(col_num)] = np.zeros((0,max_depth))
+
+        # iterate across trees
+        for t_idx, tree in enumerate(random_forest.estimators_):
+            center_t = smooth_rf.center_tree(tree, X_trained)
+            _, parent_mat = smooth_rf.depth_per_node_plus_parent(tree)
+
+            cl = tree.tree_.children_left
+            parent_mat = parent_mat[cl == -1,:]
+
+            for col_num in range(n_col):
+                addon = center_t[:,col_num][parent_mat]
+                if parent_mat.shape[1] != max_depth:
+                    diff = max_depth - parent_mat.shape[1]
+
+                    extra = np.tile(
+                                addon[:,(addon.shape[1]-1)].reshape((-1,1)),
+                                (1, diff))
+                    addon  = np.concatenate((addon, extra), axis = 1)
+
+                two_d_dict["center"+str(col_num)] = \
+                    np.concatenate((two_d_dict["center"+str(col_num)],
+                                    addon), axis = 0)
+
+
+
+
+
+
+
+
+    return one_d_dict, two_d_dict
+
+
+
 
 class ForestDataset(Dataset):
     def __init__(self, y, Gamma, eta, weights, t_vec,

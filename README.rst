@@ -32,7 +32,7 @@ Basic Example
   data_test, y_test = sklearn.datasets.make_moons(n_samples=10000,
                                                   noise=.3)
 
-  rf = sklearn.ensemble.RandomForestClassifier(n_estimators = 100)
+  rf = sklearn.ensemble.RandomForestClassifier(n_estimators = 10)
   rf_model = rf.fit(data_train, y_train)
 
   # make more straight-forward
