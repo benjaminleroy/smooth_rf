@@ -374,11 +374,6 @@ def node_spatial_structure_update(random_forest, X_trained,
 
 
 
-
-
-
-
-
     return one_d_dict, two_d_dict
 
 
@@ -943,6 +938,7 @@ def smooth_pytorch(random_forest, X_trained, y_trained,
                sgd_max_num=1000, all_trees=False, parents_all=False,
                distance_style=["standard","max", "min"],
                which_dicts=["one_d_dict", "two_d_dict"],
+               x_dict=[],
                init = 10,
                verbose=True):
     """
@@ -986,6 +982,9 @@ def smooth_pytorch(random_forest, X_trained, y_trained,
         which dictionaries that define the features of the leaves we'd like to
         look at should be used, see pytorch_numpy_prep function for more
         details
+    x_dicts : list of strings
+        which dictionaries should be appended based on centering of nodes
+        (same options as "which_dicts")
     verbose : bool
         logic to show pytorch data creation process and iteration of steps of
         Adam SGD (note that iteraions will be requested number // number trees)
@@ -1023,6 +1022,24 @@ def smooth_pytorch(random_forest, X_trained, y_trained,
         one_d_dict = dict()
     if "two_d_dict" not in which_dicts:
         two_d_dict = dict()
+
+    x_input_one_d_dict = one_d_dict
+    x_input_two_d_dict = two_d_dict
+
+    if "one_d_dict" not in x_dicts:
+        x_input_one_d_dict = None
+    if "two_d_dict" not in x_dicts:
+        x_input_two_d_dict = None
+
+    if x_input_one_d_dict is not None or x_input_two_d_dict is not None:
+        od, td = node_spatial_structure_update(random_forest, X_trained,
+                                               one_d_dict=x_input_one_d_dict,
+                                               two_d_dict=x_input_two_d_dict)
+
+    if od is not None:
+        one_d_dict = od
+    if td is not None:
+        two_d_dict = td
 
     num_vars = len(one_d_dict) + len(two_d_dict)
     num_trees = random_forest.n_estimators
