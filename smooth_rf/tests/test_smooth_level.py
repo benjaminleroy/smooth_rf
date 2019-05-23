@@ -295,3 +295,209 @@ def test_decision_path_nodes():
             for y in np.array(list(dict(Counter(x.ravel())).keys()))] ), \
         "values of decision_path() are not only 0 or 1, :("
 
+
+
+def test_max_depth_dist():
+    """
+    test of max_depth_dist
+    """
+    X_train = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
+        np.random.normal(loc = (-.2, 1), scale = .6, size = (100,2))),
+    axis = 0)
+    y_train = np.concatenate((np.zeros(100, dtype = np.int),
+                             np.ones(100, dtype = np.int)))
+    amount = np.int(200)
+    # creating a random forest
+    rf_class_known = sklearn.ensemble.RandomForestClassifier(
+                                                        n_estimators = 1,
+                                                        min_samples_leaf = 1)
+    random_forest = rf_class_known.fit(X = np.array(X_train)[:amount,:],
+                                      y = y_train[:amount].ravel())
+
+    data = np.array(X_train[:amount,:])
+
+    depth_dict, max_depth = smooth_rf.calc_depth_for_forest(random_forest,
+                                                  verbose = False)
+
+    Vt_dict = smooth_rf.make_Vt_mat(random_forest, data,
+                                    depth_dict = depth_dict,
+                                    verbose = False)
+
+    Ut_prime_dict = smooth_rf.make_Ut_prime_mat_no_sym(Vt_dict, Vt_dict,
+                                      max_depth = max_depth,
+                                      verbose = False)
+
+    Ut_prime_dict = smooth_rf.remove_0_from_Ut_prime(Ut_prime_dict)
+
+    if len(Ut_prime_dict) > 0:
+        K_mat = smooth_rf.make_kernel(Ut_prime_dict)
+
+        DD_mat = smooth_rf.max_depth_dist(K_mat)
+
+        assert K_mat.shape == DD_mat.shape, \
+            "dimensions between K_mat and DD_mat should be the same"
+
+        if type(DD_mat) is sparse.coo.core.COO:
+            assert np.all(np.diag(DD_mat.todense()) == 0), \
+                "diagonal should be naturally 0 (has error)"
+        else:
+            assert np.all(np.diag(DD_mat) == 0), \
+                "diagonal should be naturally 0 (has error)"
+
+        assert np.all(DD_mat >= 0), \
+            "all entries should be positive in DD (has error)"
+
+        # new checks:
+
+        assert np.all(DD_mat == DD_mat), \
+            "DD_mat should be symmetric"
+
+        DD_base_mat = smooth_rf.depth_dist(K_mat)
+
+        assert np.all(DD_mat >= DD_base_mat), \
+            "DD_mat_max should always be >= DD_mat_basic"
+
+        assert np.all(DD_mat[DD_mat != DD_base_mat] == \
+                     DD_base_mat.T[DD_mat != DD_base_mat]), \
+            "DD_mat_max should take the max of DD_bases value " +\
+            "across ij and ji combos"
+
+    else:
+        K_mat = smooth_rf.make_kernel(Ut_prime_dict)
+        assert K_mat == 0, \
+            "when you provide an empty Ut_prime_dict you should get a 0"
+
+
+
+def test_min_depth_dist():
+    """
+    test of min_depth_dist
+    """
+    X_train = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
+        np.random.normal(loc = (-.2, 1), scale = .6, size = (100,2))),
+    axis = 0)
+    y_train = np.concatenate((np.zeros(100, dtype = np.int),
+                             np.ones(100, dtype = np.int)))
+    amount = np.int(200)
+    # creating a random forest
+    rf_class_known = sklearn.ensemble.RandomForestClassifier(
+                                                        n_estimators = 1,
+                                                        min_samples_leaf = 1)
+    random_forest = rf_class_known.fit(X = np.array(X_train)[:amount,:],
+                                      y = y_train[:amount].ravel())
+
+    data = np.array(X_train[:amount,:])
+
+    depth_dict, max_depth = smooth_rf.calc_depth_for_forest(random_forest,
+                                                  verbose = False)
+
+    Vt_dict = smooth_rf.make_Vt_mat(random_forest, data,
+                                    depth_dict = depth_dict,
+                                    verbose = False)
+
+    Ut_prime_dict = smooth_rf.make_Ut_prime_mat_no_sym(Vt_dict, Vt_dict,
+                                      max_depth = max_depth,
+                                      verbose = False)
+
+    Ut_prime_dict = smooth_rf.remove_0_from_Ut_prime(Ut_prime_dict)
+
+    if len(Ut_prime_dict) > 0:
+        K_mat = smooth_rf.make_kernel(Ut_prime_dict)
+
+        DD_mat = smooth_rf.min_depth_dist(K_mat)
+
+        assert K_mat.shape == DD_mat.shape, \
+            "dimensions between K_mat and DD_mat should be the same"
+
+        if type(DD_mat) is sparse.coo.core.COO:
+            assert np.all(np.diag(DD_mat.todense()) == 0), \
+                "diagonal should be naturally 0 (has error)"
+        else:
+            assert np.all(np.diag(DD_mat) == 0), \
+                "diagonal should be naturally 0 (has error)"
+
+        assert np.all(DD_mat >= 0), \
+            "all entries should be positive in DD (has error)"
+
+        # new checks:
+
+        assert np.all(DD_mat == DD_mat), \
+            "DD_mat should be symmetric"
+
+        DD_base_mat = smooth_rf.depth_dist(K_mat)
+
+        assert np.all(DD_mat <= DD_base_mat), \
+            "DD_mat_min should always be <= DD_mat_basic"
+
+        assert np.all(DD_mat[DD_mat != DD_base_mat] == \
+                     DD_base_mat.T[DD_mat != DD_base_mat]), \
+            "DD_mat_max should take the min of DD_bases value " +\
+            "across ij and ji combos"
+
+    else:
+        K_mat = smooth_rf.make_kernel(Ut_prime_dict)
+        assert K_mat == 0, \
+            "when you provide an empty Ut_prime_dict you should get a 0"
+
+
+
+
+def test_smooth_all_regressor():
+    """
+    test for smooth_all - regressor, only runs on example dataset,
+    checks for errs
+    """
+    X_trained = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
+        np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
+        axis = 0)
+    y_trained = np.concatenate((np.zeros(100, dtype = np.int),
+                         np.ones(100, dtype = np.int)))
+    amount = np.int(200)
+    # creating a random forest
+    rf_reg = sklearn.ensemble.RandomForestRegressor(
+                                                    n_estimators = 5,
+                                                    min_samples_leaf = 1)
+    fit_reg = rf_reg.fit(X = np.array(X_trained)[:amount,:],
+                                  y = y_trained[:amount].ravel())
+    forest = fit_reg.estimators_
+
+    random_forest = fit_reg
+    verbose = True
+    parents_all = True
+    distance_style = "standard"
+
+    # general check for erroring
+    try:
+        updated_rf = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
+                                    parents_all=True, verbose=False)
+    except:
+        assert False, \
+            "error running smoothing_function for a random forest regressor"
+
+    # general check for erroring, no constraint
+    try:
+        updated_rf = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
+                                    parents_all=True, verbose=False,
+                                    no_constraint=False)
+    except:
+        assert False, \
+            "error running smoothing_function for a random forest regressor"
+
+
+    # sanity check
+    a = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
+                             parents_all=True, verbose=False,
+                             sanity_check=True)
+
+    no_update_pred = a.predict(X_trained)
+    base_pred = random_forest.predict(X_trained)
+
+    assert np.all(no_update_pred == base_pred), \
+        "sanity check for rf regressor in smoother failed"
+
+
+
+

@@ -938,7 +938,7 @@ def smooth_pytorch(random_forest, X_trained, y_trained,
                sgd_max_num=1000, all_trees=False, parents_all=False,
                distance_style=["standard","max", "min"],
                which_dicts=["one_d_dict", "two_d_dict"],
-               x_dict=[],
+               x_dicts=[],
                init = 10,
                verbose=True):
     """

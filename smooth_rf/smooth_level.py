@@ -271,69 +271,6 @@ def min_depth_dist(K_mat = None, DD_mat = None):
     return np.min(np.stack((DD_mat, DD_mat.T), axis = 0), axis = 0)
 
 
-# depth distance in a tree
-def depth_dist_tree(Vt_dict_single, y):
-    min_v = 1
-    max_v = 0
-    average_dict = dict()
-    for d_idx in Vt_dict_single.keys():
-        average_inner = []
-        for c_idx in np.arange(Vt_dict_single[d_idx].shape[1], dtype = np.int):
-            logic_inner = (Vt_dict_single[d_idx][:,c_idx] == 1)
-            local_mean = np.mean(y[np.array(logic_inner.todense()).ravel()])
-            average_inner.append(local_mean)
-            max_v = max(max_v, local_mean)
-            min_v = min(min_v, local_mean)
-
-        average_dict[d_idx] = average_inner
-
-    return average_dict, min_v, max_v
-
-
-# a, mi, ma = depth_dist_tree(Vt_dict[0], y_test)
-
-## maybe plot color as true local mean (this is associated with leaves)
-
-def dist_mat(X, verbose = True):
-    n = X.shape[0]
-    Dist_mat = np.zeros(shape = (n,n))
-
-    if verbose:
-        bar = progressbar.ProgressBar()
-        itera = bar(np.arange(n))
-    else:
-        itera = np.arange(n)
-
-    if len(X.shape) > 1:
-        for i in itera:
-            for j in np.arange(i,n):
-                Dist_mat[i,j] = scipy.spatial.distance.euclidean(X[i,],X[j,])
-                Dist_mat[j,i] = Dist_mat[i,j]
-    else:
-        for i in itera:
-            Dist_mat[i,:] = np.abs(X[i]-X)
-    return Dist_mat
-
-
-
-
-def depth_vis_pairs(X, Mat, ax):
-    # calculate distance between X_i (for now just need 1D)
-    n = X.shape[0]
-    assert (n, n) == Mat.shape, \
-        "error in size assumptions"
-
-    Dist_mat = np.zeros(shape = Mat.shape)
-    for i in np.arange(n):
-        for j in np.arange(i,n):
-            Dist_mat[i,j] = scipy.spatial.distance.euclidean(X[i,],X[j,])
-            Dist_mat[j,i] = Dist_mat[i,j]
-    # ravel Dist_mat, Mat, plot
-    ax.scatter(x = Dist_mat.ravel(), y = Mat.ravel())
-
-    return Dist_mat
-
-
 #### decision_path relative to nodes ---------------
 
 def decision_path_nodes(children_right, children_left):
@@ -550,41 +487,93 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
         scipy.sparse.diags(np.array(obs_weight_non_zero_all).ravel()) @ \
         Gamma_all # (n,n)
 
-    a = 2 * Gamma_all.T @ np.array(obs_y_leaf_all).ravel() # (n,)
+    a = Gamma_all.T @ \
+        scipy.sparse.diags(np.array(obs_weight_non_zero_all).ravel()) @ \
+        np.array(obs_y_leaf_all).ravel() # (n,)
     C = np.hstack((1 * np.ones((max_depth + 1,1)),
                    1 * np.identity(max_depth + 1))) # (n, m)
     b = np.array([1] + [0]*(max_depth + 1)) #(m)
 
     # COMMENT: FOR ERROR: Gamma can have linearly dependent columns...
     # how to think about (pinv?) - should have learned this implimentation
+    if no_constraint is False:
+        reattempt = True
+        two_power = -1
+        while reattempt:
+            reattempt = False
+            try:
+                opt = quadprog.solve_qp(G = G.astype(np.float),
+                                        a = a.astype(np.float),
+                                        C = C.astype(np.float),
+                                        b = b.astype(np.float),
+                                        meq = 1)
+            except:
+                two_power += 1
+                if two_power == 0:
+                    sys.stdout.write('\n')
 
-    reattempt = True
-    while reattempt:
-        reattempt = False
-        try:
-            opt = quadprog.solve_qp(G = G.astype(np.float),
-                                    a = a.astype(np.float),
-                                    C = C.astype(np.float),
-                                    b = b.astype(np.float),
-                                    meq = 1)
-        except:
-            G = G + np.diag(np.ones(G.shape[0]) * np.finfo(float).eps * 1000)
-            reattempt = True
+                sys.stdout.write('.')
+                if two_power != 0:
+                    G = G + np.diag(np.ones(G.shape[0]) * np.finfo(float).eps *\
+                                    1000 * (2**two_power - 2**(two_power-1)))
+                else:
+                    G = G + np.diag(np.ones(G.shape[0]) * np.finfo(float).eps *\
+                                    1000)
+                reattempt = True
 
-    lamb = opt[0]
+
+        lamb = opt[0]
 
     # no constraints
     if no_constraint:
-        lamb = np.linalg.inv(G) @ Gamma_all.T @ \
-            scipy.sparse.diags(np.array(obs_weight_non_zero_all).ravel()) @ \
-            np.array(obs_y_leaf_all).ravel()
+        reattempt = True
+        two_power = -1
+        while reattempt:
+            reattempt = False
+            if not np.all(np.linalg.eigvals(G) > 0):
+                two_power += 1
+                if two_power == 0:
+                    sys.stdout.write('\n')
+
+                sys.stdout.write('.')
+                if two_power != 0:
+                    G = G + np.diag(np.ones(G.shape[0]) * np.finfo(float).eps *\
+                                    1000 * (2**two_power - 2**(two_power-1)))
+                else:
+                    G = G + np.diag(np.ones(G.shape[0]) * np.finfo(float).eps *\
+                                    1000)
+                reattempt = True
+            else:
+                lamb = np.linalg.inv(G) @ a
+
+
+    # internal sanity check --------
+    cost_actual = 1/2 * lamb.T @ G @ lamb - a.T @ lamb
+
+    lamb_base = np.zeros(lamb.shape)
+    lamb_base[0] = 1
+
+    cost_base = 1/2 * lamb_base.T @ G @ lamb_base - a.T @ lamb_base
+
+    if np.any(np.abs(lamb - lamb_base) > 1e-7):
+        print(cost_base >= cost_actual)
+        print(np.abs(lamb - lamb_base))
+        #pdb.set_trace()
+
+        if not (cost_base >= cost_actual):
+            pdb.set_trace()
+
+        assert cost_base >= cost_actual, \
+            "the base lambda is inside the options of lambda, "+\
+            "so there is a problem with the minimization"
+
 
     if sanity_check:
+    # end of interal sanity check --------
         lamb = np.zeros(lamb.shape)
         lamb[0] = 1
 
     y_leaf_new_all = Gamma_all @ lamb
-
 
     start_idx = 0
     for t in forest:
