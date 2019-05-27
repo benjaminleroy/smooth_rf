@@ -9,33 +9,19 @@ from plotnine import *
 import pdb
 import sys
 
-sys.path.append("smooth_rf/")
-import smooth_base
-import smooth_level
-
-data = pd.read_csv("data/OnlineNewsPopularity/OnlineNewsPopularity.csv")
+import smooth_rf
 
 
-y_all = np.log10(data[" shares"])
-data_all = data.drop(columns = ["url"," timedelta"," shares"])
+path = "../"
 
 
-vis = False
+###
+# prgeng processing
+###
 
-if vis:
-    # all histograms
-
-    plt.figure()
-    data_all.hist()
-
-    plt.figure()
-    y_all.hist()
-
-    # correlation heatmap
-    plt.figure()
-    correlations = data.corr()
-    plt.matshow(correlations,vmin = -1, vmax = 1)
-
+data_all = pd.read_csv(path + "data/prgeng/prgeng.txt", sep= " ")
+y_all = data_all["wageinc"]
+data_all.pop("wageinc")
 
 # random forest...
 def regression_prep(data_train, data_test, y_train, y_test,
@@ -95,10 +81,11 @@ def depth_error_vis(cv_mat, idx_range=None):
 
     mu = cv_mat.mean(axis = 0)
     sd = cv_mat.std(axis = 0)
+    n = cv_mat.shape[0]
 
     data_vis = pd.DataFrame(data = {"mu": mu,
-                                    "lower": mu + sd,
-                                    "upper": mu - sd,
+                                    "lower": mu + sd/np.sqrt(n),
+                                    "upper": mu - sd/np.sqrt(n),
                                     "idx range": idx_range})
 
 
@@ -113,6 +100,9 @@ def depth_error_vis(cv_mat, idx_range=None):
     return ggout, data_vis
 
 
+
+reg_or_class = "reg"
+data_name = "prgeng_" + reg_or_class
 n_sim = 20
 depth_range = np.arange(2,50,2)
 np.random.seed(100)
@@ -135,24 +125,24 @@ for s_idx in sim_iter:
 
     score_vec = regression_prep(data_train, data_test, y_train, y_test,
                       depth_range = np.arange(2,50,2),
-                      reg_or_class="reg",
+                      reg_or_class=reg_or_class,
                       verbose = False, ntree=n_tree)
     score_mat[s_idx,:] = score_vec
 
 score_mat10 = score_mat
 
 
-ggout, data_vis = depth_error_vis(score_mat10,depth_range )
+ggout, data_vis = depth_error_vis(score_mat10, depth_range)
 
 save_as_pdf_pages([ggout +\
                    theme(figure_size = (8,6))],
-                  filename = "images/depth_vis_" +\
-                         "onlinenewspopularity_tree" +\
+                  filename = path +  "images/depth_vis_" +\
+                         data_name+"_tree" +\
                          str(n_tree)+\
                          ".pdf")
 
-data_vis.to_csv("images/data_vis_depth_" +\
-                "onlinenewspopularity_tree" +\
+data_vis.to_csv(path + "images/data_vis_depth_" +\
+                data_name+"_tree" +\
                 str(n_tree) +\
                 ".csv")
 
@@ -174,24 +164,24 @@ for s_idx in sim_iter:
                                                  test_size = .5)
     score_vec = regression_prep(data_train, data_test, y_train, y_test,
                       depth_range = np.arange(2,50,2),
-                      reg_or_class="reg",
+                      reg_or_class=reg_or_class,
                       verbose = False, ntree=n_tree)
     score_mat[s_idx,:] = score_vec
 
 
 score_mat300 = score_mat
 
-ggout300, data_vis300 = depth_error_vis(score_mat10,depth_range )
+ggout300, data_vis300 = depth_error_vis(score_mat300, depth_range)
 
 
 save_as_pdf_pages([ggout300 +\
                    theme(figure_size = (8,6))],
-                  filename = "images/depth_vis_" +\
-                         "onlinenewspopularity_tree" +\
+                  filename = path + "images/depth_vis_" +\
+                         data_name+"_tree" +\
                          str(n_tree)+\
                          ".pdf")
 
-data_vis300.to_csv("images/data_vis_depth_" +\
-                "onlinenewspopularity_tree" +\
+data_vis300.to_csv(path + "images/data_vis_depth_" +\
+                data_name+"_tree" +\
                 str(n_tree) +\
                 ".csv")

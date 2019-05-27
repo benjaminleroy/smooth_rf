@@ -92,8 +92,14 @@ else:
 s = sys.argv[5]
 if s == "lb":
     style = "level-base"
+    if reg_or_class == "class":
+        NameError("level-base analysis currently not designed" +\
+                  "for classification problems")
+    adam_used = 0
+    print('Note: adam sgd not needed for level-base analysis')
 elif s == "eb":
     style = "element-based"
+    adam_used = 1
 else:
     NameError("s needs to be 1 of the 2 options")
 
@@ -436,7 +442,7 @@ if create_figs:
                                  style + "_" +\
                                  "distance-"+ d +\
                                  "_tree_depth_dist-"+ inner_dist+\
-                                 "_adam.csv")
+                                 "_adam" * adam_used + ".csv")
 
         save_as_pdf_pages([depth_vis  +\
                            theme(figure_size = (8,6))],
@@ -449,7 +455,7 @@ if create_figs:
                                  style + "_" +\
                                  "distance-"+ d +\
                                  "_tree_depth_dist-"+ inner_dist+\
-                                  "_adam.pdf")
+                                  "_adam" * adam_used + ".pdf")
 
     if style == "element-based":
 
@@ -465,7 +471,8 @@ if create_figs:
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
-                                 str(max_iter) + "_adam.csv")
+                                 str(max_iter) +\
+                                 "_adam" * adam_used + ".csv")
 
         save_as_pdf_pages([depth_vis  +\
                            theme(figure_size = (8,6))],
@@ -481,7 +488,8 @@ if create_figs:
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
-                                 str(max_iter) + "_adam.pdf")
+                                 str(max_iter) +\
+                                 "_adam" * adam_used + ".pdf")
 
 
 
@@ -499,7 +507,8 @@ if create_figs:
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
-                                 str(max_iter) + "_adam.csv")
+                                 str(max_iter) +\
+                                 "_adam" * adam_used + ".csv")
 
         save_as_pdf_pages([cost_vis +\
                            theme(figure_size = (8,6))],
@@ -515,7 +524,8 @@ if create_figs:
                                  "init_lamb-" + initial_lamb + "_" +\
                                  "fix_t-" + str(subgrad_fix_t) + "_" +\
                                  batch + "_" +\
-                                 str(max_iter) + "_adam.pdf")
+                                 str(max_iter) +\
+                                 "_adam" * adam_used + ".pdf")
 
 
 

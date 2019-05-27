@@ -18,7 +18,7 @@ import smooth_rf
 path = "../"
 
 # input
-# 1: data_set = ["moon"]
+# 1: data_set = ["moon", "microsoft", "titantic"]
 # 2: num_trees = [1, 10, 300] (integer)
 # 3: tuning = ["resample", "oob", "oracle"]
 # 4: constrained = ["c","nc"]
@@ -37,17 +37,59 @@ path = "../"
 
 
 data_set = sys.argv[1]
-if data_set != "moon" and data_set != "microsoft":
-    NameError("dataset should be the moon or microsoft dataset")
-else:
+if data_set == "moon" or data_set == "microsoft":
     reg_or_class = "class"
     y_all = None
     data_all = None
+elif data_set == "titantic":
+    reg_or_class = "class"
+    data_train = pd.read_csv(path + "data/titanic/titanic3.csv")
+
+    data_train.pop("cabin")
+    data_train.pop("name")
+    data_train.pop("ticket")
+    data_train.pop("body")
+    data_train.pop("boat")
+    data_train.pop("home.dest")
+    data_train["pclass"] = data_train["pclass"].apply(str)
+
+    NAs = pd.concat([data_train.isnull().sum()], axis=1)
+    # NAs[NAs.sum(axis=1) > 0]
+
+
+
+
+    # Filling missing Age values with mean
+    data_train["age"] = data_train["age"].fillna(data_train["age"].mean())
+    # Filling missing Embarked values with most common value
+    data_train["embarked"] = data_train["embarked"].fillna(data_train["embarked"].mode()[0])
+
+
+    for col in data_train.dtypes[data_train.dtypes == "object"].index:
+        for_dummy = data_train.pop(col)
+        data_train = pd.concat([data_train,
+                                pd.get_dummies(for_dummy, prefix=col)],
+                               axis=1)
+
+    data_train = data_train.dropna()
+
+    y_all = data_train.survived
+    data_train.pop("survived")
+
+    data_all = data_train
+
+    data_all = np.array(data_all)
+    y_all = y_all.ravel()
+else:
+    NameError("dataset should be the moon, microsoft, or titantic datasets")
+
 
 if data_set == "moon":
     n_data = 350
-if data_set == "microsoft":
+elif data_set == "microsoft":
     n_data = 650
+else:
+    n_data = -1
 
 n = sys.argv[2]
 num_trees = np.int(n)
@@ -116,7 +158,6 @@ else:
     max_iter = ""
     subgrad_fix_t = ""
 
-
 # check overfitting potential
 
 
@@ -181,7 +222,9 @@ def check_rf_grow(n_data, n_large, n_draws,
         data_generator = lambda large_n: sklearn.datasets.make_moons(
                                                         n_samples=large_n,
                                                         noise=.3)
-    elif data_set == "online_news" or data_set == "splice":
+    elif data_set == "online_news" or \
+        data_set == "splice" or \
+        data_set == "titantic":
         if tuning == "oracle":
             NameError("tuning cannot be oracle for the online_news dataset")
         if data_all is None or y_all is None:
@@ -226,7 +269,9 @@ def check_rf_grow(n_data, n_large, n_draws,
     for i, max_depth in depth_iter:
         for j in np.arange(n_draws):
 
-            if data_set == "online_news" or data_set == "splice":
+            if data_set == "online_news" or \
+                data_set == "splice" or \
+                data_set == "titantic":
                 data, data_test, y, y_test = \
                     sklearn.model_selection.train_test_split(data_all,
                                                              y_all,

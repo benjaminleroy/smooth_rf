@@ -5,6 +5,7 @@ import sklearn
 import sys, os
 import matplotlib.pyplot as plt
 import scipy
+import scipy.linalg
 import progressbar
 import sparse
 import scipy.sparse
@@ -441,20 +442,144 @@ def test_min_depth_dist():
         assert K_mat == 0, \
             "when you provide an empty Ut_prime_dict you should get a 0"
 
+def test_is_pos_def():
+    """
+    test for is_pos_def function
+    """
+
+    A = np.arange(16).reshape(4,4)
+    assert not smooth_rf.is_pos_def(A), \
+        "Error seeing a non-symetric matrix is not PSD"
+
+    A = np.array([[1,0],
+                 [0,1]])
+    assert smooth_rf.is_pos_def(A), \
+        "identity matrix should bee seen as PSD"
+
+    A = np.array([[2,-1,0],
+                 [-1,2,-1],
+                 [0,-1,2]])
+    assert smooth_rf.is_pos_def(A), \
+        "example from wikipedia should be PSD"
+
+    A = np.array([[1,2],
+                 [2,1]])
+    assert not smooth_rf.is_pos_def(A), \
+        "thinks a matrix with all postive values is PSD when it is not"
+
+    A = np.array([[4,9],
+                 [1,4]])
+    assert not smooth_rf.is_pos_def(A), \
+        "thinks a matrix with positive eigenvalues but not symmetric is PSD when it is not"
+
+def test_process_tuning_leaf_attributes_tree():
+    """
+    test process_tuning_leaf_attributes_tree
+    """
+    for _ in range(10):
+        X_trained = np.concatenate(
+            (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
+            np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
+            axis = 0)
+        y_trained = np.concatenate((np.zeros(100, dtype = np.int),
+                             np.ones(100, dtype = np.int))) + 100
+
+        X_tuned = np.concatenate(
+            (np.random.normal(loc = (1,2), scale = .6, size = (50,2)),
+            np.random.normal(loc = (-1.2, -.5), scale = .6, size = (50,2))),
+            axis = 0)
+        y_tuned = np.concatenate((np.zeros(50, dtype = np.int),
+                             np.ones(50, dtype = np.int))) + 100
+
+
+        amount = np.int(200)
+        # creating a random forest
+        rf_reg = sklearn.ensemble.RandomForestRegressor(n_estimators = 1,
+                                                        min_samples_leaf = 1)
+        fit_reg = rf_reg.fit(X = np.array(X_trained)[:amount,:],
+                                      y = y_trained[:amount].ravel())
+        forest = fit_reg.estimators_
+
+        t = forest[0]
+
+        a, b = smooth_rf.process_tuning_leaf_attributes_tree(t, eps = -1,
+                                            X_tune = X_tuned,
+                                            y_tune = y_tuned)
+
+        assert np.all(b[a == -1] == 0), \
+            "leaves with no elements from tuning data should also have "+\
+            "y predicted value of 0"
+
+        assert np.sum([a[a != -1]]) == 1, \
+            "weights should be scaled to sum to 1 (excluding those values "+\
+            "with eps value inserted)"
+
+        assert np.sum(a[a != -1] * b[a!=-1]) == 100.5, \
+            "should preserve correct data structure from tuning data"
+
+        assert a.shape[0] == np.sum(t.tree_.children_left == -1) and \
+            a.shape[0] == b.shape[0], \
+            "a and b should have the same length as the number of tree leaves"
+
+def test_update_til_psd():
+    """
+    test update_til_psd
+    """
+    A = np.arange(16).reshape(4,4)
+    expection_returned = False
+    try:
+        smooth_rf.update_til_psd(A)
+    except:
+        expection_returned = True
+
+    assert expection_returned, \
+        "Should raise error if input is not symmetric"
+
+    A = np.array([[1,0],
+                 [0,1]])
+    assert np.array_equal(smooth_rf.update_til_psd(A), A), \
+        "identity matrix should already be PSD"
+
+    A = np.array([[2,-1,0],
+                 [-1,2,-1],
+                 [0,-1,2]])
+    assert np.array_equal(smooth_rf.update_til_psd(A), A), \
+        "example from wikipedia should already be PSD"
+
+    A = np.array([[1,2],
+                 [2,1]])
+
+    updated_A = smooth_rf.update_til_psd(A, verbose=False)
+
+    assert not np.array_equal(A,updated_A), \
+        "Matrix with all positive values but not PSD should need update"
+
+    diff = np.diag(updated_A - A)
+    assert np.array_equal(updated_A - np.diag(diff), A), \
+        "updated matrix should only be updated from a diagonal matrix"
+
+    assert np.all(diff == diff[0]), \
+        "updated diagonal entries should have the same value"
+
+    steps = np.round(np.log(diff[0] / np.finfo(float).eps)/np.log(2), 1 )
+
+    assert np.int(steps) == steps, \
+        "should have integer in added 2^K* eps value - weak check"
 
 
 
 def test_smooth_all_regressor():
     """
     test for smooth_all - regressor, only runs on example dataset,
-    checks for errs
+    checks for errs (takes a bit)
     """
+    # easy to seperate example
     X_trained = np.concatenate(
         (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
         np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
         axis = 0)
     y_trained = np.concatenate((np.zeros(100, dtype = np.int),
-                         np.ones(100, dtype = np.int)))
+                         np.ones(100, dtype = np.int))) + 100
     amount = np.int(200)
     # creating a random forest
     rf_reg = sklearn.ensemble.RandomForestRegressor(
@@ -465,26 +590,31 @@ def test_smooth_all_regressor():
     forest = fit_reg.estimators_
 
     random_forest = fit_reg
-    verbose = True
-    parents_all = True
-    distance_style = "standard"
 
     # general check for erroring
     try:
         updated_rf = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
-                                    parents_all=True, verbose=False)
+                                    parents_all=True, verbose=False,
+                                    no_constraint=True,
+                                    sanity_check={'sanity check':False,
+                                                  'tol_pow':None})
     except:
         assert False, \
             "error running smoothing_function for a random forest regressor"
+
 
     # general check for erroring, no constraint
     try:
         updated_rf = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
                                     parents_all=True, verbose=False,
-                                    no_constraint=False)
+                                    no_constraint=False,
+                                    sanity_check={'sanity check':False,
+                                                  'tol_pow':None})
     except:
         assert False, \
             "error running smoothing_function for a random forest regressor"
+    assert np.isclose(np.sum(updated_rf.lamb), 1, rtol =1e-8),\
+        "lambda should be constrained to sum to 1 if 'no_constraint=False'"
 
 
     # sanity check
@@ -499,5 +629,132 @@ def test_smooth_all_regressor():
         "sanity check for rf regressor in smoother failed"
 
 
+    # harder to seperate example
 
+    X_trained = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (200,2)),
+        np.random.normal(loc = (.5,2), scale = .6, size = (200,2))),
+        axis = 0)
+    y_trained = np.concatenate((np.zeros(200, dtype = np.int),
+                         np.ones(200, dtype = np.int))) + 100
+    amount = np.int(400)
+    # creating a random forest
+    rf_reg = sklearn.ensemble.RandomForestRegressor(
+                                                    n_estimators = 10,
+                                                    min_samples_leaf = 1)
+    fit_reg = rf_reg.fit(X = np.array(X_trained)[:amount,:],
+                                  y = y_trained[:amount].ravel())
+    forest = fit_reg.estimators_
+
+    random_forest = fit_reg
+
+    # general check for erroring
+    fail_count = 0
+    for tol_pow in [None, 10, 20]:
+        early_fail_count = fail_count
+        try:
+            updated_rf = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
+                                        parents_all=False, verbose=False,
+                                        no_constraint=True,
+                                        sanity_check={'sanity check':False,
+                                                      'tol_pow':None})
+        except:
+            fail_count += 1
+        if early_fail_count == fail_count:
+            pass
+    assert fail_count < 3, \
+        "error running smoothing_function for a random forest regressor " +\
+        "across all tol_pow options"
+
+
+    # general check for erroring, no constraint
+    fail_count = 0
+    for tol_pow in [None, 10, 20]:
+        early_fail_count = fail_count
+        try:
+            updated_rf = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
+                                        parents_all=False, verbose=False,
+                                        no_constraint=False,
+                                        sanity_check={'sanity check':False,
+                                                      'tol_pow':10})
+        except:
+            fail_count += 1
+        if early_fail_count == fail_count:
+            pass
+
+    assert fail_count < 3, \
+        "error running smoothing_function for a random forest regressor "+\
+        "(with constraint)" +\
+        "across all tol_pow options"
+
+    assert np.isclose(np.sum(updated_rf.lamb), 1, rtol =1e-8),\
+        "lambda should be constrained to sum to 1 if 'no_constraint=False'"
+
+
+    # sanity check
+    a = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
+                             parents_all=False, verbose=False,
+                             sanity_check={'sanity check':True,
+                                           'tol_pow':20})
+
+    no_update_pred = a.predict(X_trained)
+    base_pred = random_forest.predict(X_trained)
+
+    assert np.all(no_update_pred == base_pred), \
+        "sanity check for rf regressor in smoother failed"
+
+
+def test_check_in_null():
+    """
+    test check_in_null
+    """
+
+    # in the null (basic):
+    G = np.array([[2,3,5],
+                 [-4,2,3]])
+    v = np.array([-1/16, -13/8,1])
+
+    assert smooth_rf.check_in_null(G,v), \
+        "wikipedia's first example should see v being in the null space of G"
+
+    # in the null (not basic):
+    G = np.array([[1, 0 ,-3, 0, 2, -8],
+                  [0, 1, 5, 0, -1, 4],
+                  [0, 0, 0, 1, 7, -9],
+                  [0, 0, 0, 0, 0, 0]
+                 ])
+
+    v1 = np.array([3,-5,1,0,0,0])
+    v2 = np.array([-2,1,0,-7,1,0])
+    v3 = np.array([8,-4,0,9,0,1])
+
+    for _ in range(10):
+        v_new = np.random.uniform(size = 1) * v1 +\
+                    np.random.uniform(size = 1) * v2 +\
+                    np.random.uniform(size = 1) * v3
+        assert smooth_rf.check_in_null(G, v_new),\
+            "wikipedia's second example should see any combo of the 3 v "+\
+            "vectors belong to the null space of G"
+
+    # not in the null (sup basic):
+    G = np.array([[1,0],
+                 [0,1]])
+    for _ in range(10):
+        v = np.random.uniform(size = 1)
+        assert not smooth_rf.check_in_null(G,v),\
+            "There is no null space for the identity matrix - so nothing "+\
+            "should be in the null"
+
+    # not in the null (basic):
+    G = np.array([[2,3,5],
+                 [-4,2,3]])
+    v = np.array([-2, 5,8])
+    assert not smooth_rf.check_in_null(G,v),\
+        "A basic linear combination of the rows should also be in the span of G"
+
+    # not in null
+    v = np.array([-2, 5,8]) + np.array([-1/16, -13/8,1])
+    assert not smooth_rf.check_in_null(G,v),\
+        "A combination of all vectors (including 1 from null should not be "+\
+        " the null space of G"
 

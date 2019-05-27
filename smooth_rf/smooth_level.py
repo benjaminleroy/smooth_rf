@@ -308,10 +308,177 @@ def _decision_list_nodes(children_right, children_left, idx=0, elders=list()):
                 c_left[1] + c_right[1]]
 
 
+def is_pos_def(A):
+    """
+    check if matrix is PSD
+
+    Code from: https://stackoverflow.com/questions/16266720/find-out-if-matrix-is-positive-definite-with-numpy
+
+    Argument:
+    ---------
+    A: array (n, n)
+        symmetric matrix (though checks if it is)
+
+    Returns:
+    --------
+    boolean logic if matrix is PSD
+
+    """
+    if np.allclose(A, A.T):
+        try:
+            np.linalg.cholesky(A)
+            return True
+        except np.linalg.LinAlgError:
+            return False
+    else:
+        return False
+
+
+def process_tuning_leaf_attributes_tree(t, eps, X_tune, y_tune):
+    """
+    create (defined from the tuning data) the weights per leaf and y_value
+    per leaf
+
+    This process is for regression only currently
+
+    Arguments:
+    ----------
+    t: tree
+        Assumed to be sklearn regression base version, for the leaf structure
+    eps: float
+        value to fill in for leaves with no observations observed
+    X_tune: array (n, p)
+        array with X data for the tuning data
+    y_tune: array (n, )
+        vector with tuning data's y values
+
+    Returns:
+    --------
+    obs_weight_non_zero: array (T,)
+        vector of number of observations in the tuning data that fall into each
+        leaf (T total number of leaves). 0 is replaced with eps.
+    obs_y_leaf: array (T,)
+        vector of average y value for each leaf (T total number of leaves)
+    """
+    tree = t.tree_
+
+    obs_V = t.decision_path(X_tune)
+    obs_V_leaf = obs_V[:,tree.children_left == -1]
+
+    obs_count = obs_V_leaf.sum(axis = 0).ravel() # by column
+
+    #---
+    # for clean division without dividing by 0
+    obs_count_div = obs_count.copy()
+    obs_count_div[obs_count_div == 0] = 1
+    #---
+    obs_weight = obs_count / np.sum(obs_count)
+
+    #---
+    # for clean inverse even if no observations fall into a leaf (hmmm...)
+    obs_weight_non_zero = obs_weight
+    obs_weight_non_zero[obs_weight_non_zero == 0] = eps
+    #---
+    obs_y_leaf = (obs_V_leaf.T @ y_tune) / obs_count_div
+
+    return np.array(obs_weight_non_zero).ravel(), \
+        np.array(obs_y_leaf).ravel()
+
+def update_til_psd(G, verbose=True):
+    """
+    If the symmetric matrix G is not PSD then we add diagonal * eps_star,
+    in sequences of 2^k * machine_eps until it is PSD.
+
+    Argument:
+    ---------
+    G : array (m, m)
+        symmetric matrix
+    verbose : bool
+        boolean value if printout for number of updates
+
+    Returns:
+    --------
+    G_updated : array (m, m)
+        updated G matrix that is PSD (G + diag(w)) where w is lowest 2^k * eps
+    """
+
+    G_updated = copy.deepcopy(G)
+
+    if not np.allclose(G, G.T):
+        raise ValueError("G needs to be symmetric")
+
+    reattempt = True
+    two_power = -1
+    while reattempt:
+        reattempt = False
+        if not is_pos_def(G_updated):
+            reattempt = True
+            two_power += 1
+
+            if verbose:
+                if two_power == 0:
+                    sys.stdout.write('\n')
+                sys.stdout.write(".")
+
+            if two_power != 0:
+                G_updated = G_updated +\
+                                np.diag(np.ones(G.shape[0]) *\
+                                np.finfo(float).eps *\
+                                1000 * (2**two_power - 2**(two_power-1)))
+            else:
+                G_updated = G_updated +\
+                                np.diag(np.ones(G.shape[0]) *\
+                                np.finfo(float).eps *\
+                                1000)
+    return G_updated
+
+def check_in_null(G, v, tol_pow = None):
+    """
+    checks if a vector is in the null space of a matrix
+    Arguments:
+    ----------
+    G : array (n, m)
+        matrix with null space
+    v : array (n, )
+        vector to check if within null space
+    tol_pow : int (non-negative)  (or None)
+        power for tolerance for deciding the rank of the matrix with
+        both the null space of G and the v containdated by examining the
+        singlar values (s) and looking at which are less than:
+            max(s) * 2^tol_pow * np.finfo(float).eps
+    Returns:
+    --------
+    value : bool
+        boolean value if v is in the null space of G
+    """
+
+    if tol_pow is not None and (tol_pow < 0 or \
+                                np.floor(tol_pow) != tol_pow):
+        raise ValueError("tol_pow needs to be a non-negative integer")
+
+
+    nspace = scipy.linalg.null_space(G)
+    null_rank = nspace.shape[1]
+
+    if null_rank == 0:
+        return False
+
+    large_mat = np.concatenate((nspace, v.reshape((-1,1))), axis=1)
+    if tol_pow is not None:
+        _, s = np.linalg.svd(large_mat,compute_uv=False)
+        larger_rank = np.linalg.matrix_rank(large_mat,
+                                            tol=s.max() *\
+                                                2**tol_pow *\
+                                                np.finfo(float).eps)
+    else:
+        larger_rank = np.linalg.matrix_rank(large_mat)
+    return larger_rank == null_rank
+
 def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
                verbose=True,
-               no_constraint=False, sanity_check=False, resample_tune=False,
-               parents_all=False):
+               no_constraint=False,
+               sanity_check={"sanity check":False, "tol_pow":None},
+               resample_tune=False,parents_all=False):
     """
     creates a smooth random forest (1 lambda set across all trees)
 
@@ -331,8 +498,11 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
         logic to show tree analysis process
     no_constraint : bool
         logic to not constrain the weights
-    sanity_check : bool
-        logic to do full process but keep same weights
+    sanity_check : bool or dictionary
+        if the first, logic to do full process but keep same weights
+        if the second, a dictionary with "santity check" as a bool defined
+        above and "tol_pow" as the value to put into smooth_rf.check_in_null
+        function
     resample_tune: bool
         logic to tune / optimize with another bootstrap same from X
     parents_all : bool
@@ -347,8 +517,12 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
     Comments:
     ---------
 
-    If X_tune and/or y_tune is None then we will optimize each tree with oob
+    1. If X_tune and/or y_tune is None then we will optimize each tree with oob
     samples.
+    2. If the created matrix (Gamma/eta).T @ diag(weights) @ (Gamma/eta) is not
+    PSD then we add diagonal * eps_star, in sequences of 2^k * machine_eps until
+    it is PSD.
+
     """
 
     n_obs_trained = X_trained.shape[0]
@@ -360,19 +534,32 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
     else:
         oob_logic = False
 
-
-
     y_trained = y_trained.ravel()
-    #^note that we should probably check that this is correct shape
+
+    if y_trained.shape[0] != X_trained.shape[0]:
+        raise ValueError("y_trained and X_trained should have the same "+\
+                         "number of observations")
+
+    if type(sanity_check) is dict:
+        try:
+            tol_pow = sanity_check["tol_pow"]
+            sanity_check = sanity_check["sanity check"]
+        except:
+            raise ValueError("a dictionary input for sanity_check did not "+\
+                             "keys named named 'sanity check' and 'pow_tol'")
+    else:
+        tol_pow = None
+
+    if type(sanity_check) is not bool:
+        raise ValueError("sanity_check or sanity_check['sanity check'] must "+\
+                         "must be a boolean value.")
 
     inner_rf = copy.deepcopy(random_forest)
-
     forest = inner_rf.estimators_
 
     _, max_depth = smooth_rf.calc_depth_for_forest(random_forest,verbose=False)
     max_depth = np.int(max_depth)
 
-    # Gamma_all = np.zeros((0,max_depth + 1))
     obs_y_leaf_all = np.zeros(0)
     obs_weight_non_zero_all = np.zeros(0)
 
@@ -386,38 +573,11 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
         tree = t.tree_
         num_leaf = np.sum(tree.children_left == -1)
 
-        # # node associated
-        # node_V = decision_path_nodes(tree.children_right, tree.children_left)
-        # node_dd = depth_dist(node_V @ node_V.T)
-        # node_dd_expand = categorical_depth_expand(node_dd)
-
-        # num_lamb = node_dd_expand.shape[0]
-        # # hmmm - to grab the OOB we could do:
-        # # _generate_sample_indices
-        # # from https://github.com/scikit-learn/scikit-learn/blob/bac89c253b35a8f1a3827389fbee0f5bebcbc985/sklearn/ensemble/forest.py#L78
-        # # just need to grab the tree's random state (t.random_state)
-
         # # trained "in bag observations"
         random_state = t.random_state
-        sample_indices = \
-            sklearn.ensemble.forest._generate_sample_indices(random_state,
-                                                             n_obs_trained)
-        # train_V = t.decision_path(X_trained[sample_indices,:])
-        # train_V_leaf = train_V[:,tree.children_left == -1]
-
-        # train_count = train_V_leaf.sum(axis = 0) # by column
-        # train_weight = train_count / np.sum(train_count)
-        # train_value_sum = (train_V_leaf.T @ y_trained[sample_indices])
-
-
-        # assert np.sum(train_count) == sample_indices.shape[0], \
-        #     "incorrect shape match"
-
-        # np.testing.assert_allclose(
-        #     np.array(tree.value[tree.children_left == -1,:,:]).ravel(),
-        #     np.array(train_value_sum / train_count).ravel(),
-        #     err_msg = "weirdly prediction value is expected to be...")
-
+        # sample_indices = \
+        #     sklearn.ensemble.forest._generate_sample_indices(random_state,
+        #                                                      n_obs_trained)
         # # observed information
         if oob_logic:
             oob_indices = \
@@ -434,40 +594,12 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
             X_tune = X_trained[resample_indices,:]
             y_tune = y_trained[resample_indices]
 
-        obs_V = t.decision_path(X_tune)
-        obs_V_leaf = obs_V[:,tree.children_left == -1]
 
-        obs_count = obs_V_leaf.sum(axis = 0).ravel() # by column
+        obs_weight_non_zero, obs_y_leaf = \
+            process_tuning_leaf_attributes_tree(t, eps = -1,
+                                                X_tune = X_tune,
+                                                y_tune = y_tune)
 
-        #---
-        # for clean division without dividing by 0
-        obs_count_div = obs_count.copy()
-        obs_count_div[obs_count_div == 0] = 1
-        #---
-        obs_weight = obs_count / np.sum(obs_count)
-
-        #---
-        # for clean inverse even if no observations fall into a leaf (hmmm...)
-        obs_weight_non_zero = obs_weight
-        obs_weight_non_zero[obs_weight_non_zero == 0] = eps
-        #---
-        obs_y_leaf = (obs_V_leaf.T @ y_tune) / obs_count_div
-
-        # Gamma_num = node_dd_expand @ train_value_sum
-        # Gamma_deno = node_dd_expand @ np.array(train_count).ravel()
-
-        # Gamma_deno_div = Gamma_deno.copy()
-        # Gamma_deno_div[Gamma_deno_div == 0] = 1
-
-        # Gamma = (Gamma_num / Gamma_deno_div).T
-
-        # if Gamma.shape[1] != (max_depth + 1):
-        #     Gamma_structure = np.zeros((Gamma.shape[0], max_depth + 1))
-        #     Gamma_structure[:,:Gamma.shape[1]] = Gamma
-        # else:
-        #     Gamma_structure = Gamma
-
-        # Gamma_all = np.vstack((Gamma_all, Gamma_structure))
         obs_weight_non_zero_all = np.hstack((obs_weight_non_zero_all,
                                     np.array(obs_weight_non_zero).ravel()))
         obs_y_leaf_all = np.hstack((obs_y_leaf_all,
@@ -476,11 +608,21 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
     ga, et, _ = smooth_rf.create_Gamma_eta_forest(inner_rf,
                                                     verbose=verbose,
                                                     parents_all=parents_all)
-    #pdb.set_trace()
 
+    assert np.all(ga[et == 0] == 0), \
+        "All gamma values when eta = 0 should also equal 0"
+
+    # this should only account for dividing by 0
     et[et == 0] = eps
-
     Gamma_all = ga/et
+
+    # if we see no observations in the leaf we shouldn't look at it
+    not_missing_idx = obs_weight_non_zero_all != -1
+
+    Gamma_all_store = copy.deepcopy(Gamma_all)
+    Gamma_all = Gamma_all[not_missing_idx,:]
+    obs_weight_non_zero_all = obs_weight_non_zero_all[not_missing_idx]
+    obs_y_leaf_all = obs_y_leaf_all[not_missing_idx]
 
     # optimization:
     G = Gamma_all.T @ \
@@ -496,55 +638,43 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
 
     # COMMENT: FOR ERROR: Gamma can have linearly dependent columns...
     # how to think about (pinv?) - should have learned this implimentation
-    if no_constraint is False:
-        reattempt = True
-        two_power = -1
-        while reattempt:
-            reattempt = False
-            try:
-                opt = quadprog.solve_qp(G = G.astype(np.float),
-                                        a = a.astype(np.float),
-                                        C = C.astype(np.float),
-                                        b = b.astype(np.float),
-                                        meq = 1)
-            except:
-                two_power += 1
-                if two_power == 0:
-                    sys.stdout.write('\n')
 
-                sys.stdout.write('.')
-                if two_power != 0:
-                    G = G + np.diag(np.ones(G.shape[0]) * np.finfo(float).eps *\
-                                    1000 * (2**two_power - 2**(two_power-1)))
-                else:
-                    G = G + np.diag(np.ones(G.shape[0]) * np.finfo(float).eps *\
-                                    1000)
-                reattempt = True
+    #pdb.set_trace()
+    G = (G + G.T)/2
+    G = update_til_psd(G, verbose=verbose) # apparently this isn't good enough...
 
-
-        lamb = opt[0]
-
-    # no constraints
-    if no_constraint:
-        reattempt = True
-        two_power = -1
-        while reattempt:
-            reattempt = False
-            if not np.all(np.linalg.eigvals(G) > 0):
-                two_power += 1
-                if two_power == 0:
-                    sys.stdout.write('\n')
-
-                sys.stdout.write('.')
-                if two_power != 0:
-                    G = G + np.diag(np.ones(G.shape[0]) * np.finfo(float).eps *\
-                                    1000 * (2**two_power - 2**(two_power-1)))
-                else:
-                    G = G + np.diag(np.ones(G.shape[0]) * np.finfo(float).eps *\
-                                    1000)
-                reattempt = True
-            else:
+    reattempt = True
+    two_power = -1
+    while reattempt:
+        reattempt = False
+        try:
+            if no_constraint:
                 lamb = np.linalg.inv(G) @ a
+            else:
+                opt = quadprog.solve_qp(G = G.astype(np.float),
+                                                a = a.astype(np.float),
+                                                C = C.astype(np.float),
+                                                b = b.astype(np.float),
+                                                meq = 1)
+                lamb = opt[0]
+        except:
+            reattempt = True
+            two_power += 1
+
+            if verbose:
+                if two_power == 0:
+                    sys.stdout.write('\n')
+                sys.stdout.write(".")
+
+            if two_power != 0:
+                G = G + np.diag(np.ones(G.shape[0]) *\
+                        np.finfo(float).eps *\
+                        1000 * (2**two_power - 2**(two_power-1)))
+            else:
+                G = G + np.diag(np.ones(G.shape[0]) *\
+                        np.finfo(float).eps *\
+                        1000)
+
 
 
     # internal sanity check --------
@@ -556,16 +686,16 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
     cost_base = 1/2 * lamb_base.T @ G @ lamb_base - a.T @ lamb_base
 
     if np.any(np.abs(lamb - lamb_base) > 1e-7):
-        print(cost_base >= cost_actual)
-        print(np.abs(lamb - lamb_base))
+        #print(cost_base >= cost_actual)
+        #print(np.abs(lamb - lamb_base))
         #pdb.set_trace()
 
-        if not (cost_base >= cost_actual):
-            pdb.set_trace()
-
-        assert cost_base >= cost_actual, \
-            "the base lambda is inside the options of lambda, "+\
-            "so there is a problem with the minimization"
+        #if not (cost_base >= cost_actual):
+        #    pdb.set_trace()
+        if not check_in_null(G, lamb_base - lamb,tol_pow=tol_pow):
+            assert cost_base >= cost_actual, \
+                "the base lambda is inside the options of lambda, "+\
+                "so there is a problem with the minimization"
 
 
     if sanity_check:
@@ -573,7 +703,7 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
         lamb = np.zeros(lamb.shape)
         lamb[0] = 1
 
-    y_leaf_new_all = Gamma_all @ lamb
+    y_leaf_new_all = Gamma_all_store @ lamb
 
     start_idx = 0
     for t in forest:
@@ -581,7 +711,7 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
         num_leaf = np.sum(tree.children_left == -1)
 
 
-        tree.value[tree.children_left == -1,:,:] = \
+        tree.value[tree.children_left == -1 ,:,:] = \
             y_leaf_new_all[start_idx:(start_idx + num_leaf)].reshape((-1,1,1))
 
         start_idx += num_leaf
@@ -589,3 +719,5 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
     inner_rf.lamb = lamb
 
     return inner_rf
+
+
