@@ -573,6 +573,8 @@ def test_smooth_all_regressor():
     test for smooth_all - regressor, only runs on example dataset,
     checks for errs (takes a bit)
     """
+    inner_assess = False # change to true if want to compare inner loss evaluated with RF base
+
     # easy to seperate example
     X_trained = np.concatenate(
         (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
@@ -592,27 +594,46 @@ def test_smooth_all_regressor():
     random_forest = fit_reg
 
     # general check for erroring
-    try:
-        updated_rf = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
-                                    parents_all=True, verbose=False,
-                                    no_constraint=True,
-                                    sanity_check={'sanity check':False,
-                                                  'tol_pow':None})
-    except:
-        assert False, \
-            "error running smoothing_function for a random forest regressor"
-
+    fail_count = 0
+    for tol_pow in [None, 10, 20]:
+        early_fail_count = fail_count
+        try:
+            updated_rf = smooth_rf.smooth_all(random_forest, X_trained,
+                                              y_trained,
+                                        parents_all=False, verbose=False,
+                                        no_constraint=True,
+                                        sanity_check={'sanity check':False,
+                                                      'tol_pow':tol_pow},
+                                        inner_assess=inner_assess)
+        except:
+            fail_count += 1
+        if early_fail_count == fail_count:
+            pass
+    assert fail_count < 3, \
+        "error running smoothing_function for a random forest regressor " +\
+        "across all tol_pow options"
 
     # general check for erroring, no constraint
-    try:
-        updated_rf = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
-                                    parents_all=True, verbose=False,
-                                    no_constraint=False,
-                                    sanity_check={'sanity check':False,
-                                                  'tol_pow':None})
-    except:
-        assert False, \
-            "error running smoothing_function for a random forest regressor"
+    fail_count = 0
+    for tol_pow in [None, 10, 20]:
+        early_fail_count = fail_count
+        try:
+            updated_rf = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
+                                        parents_all=False, verbose=False,
+                                        no_constraint=False,
+                                        sanity_check={'sanity check':False,
+                                                      'tol_pow':tol_pow},
+                                        inner_assess=inner_assess)
+        except:
+            fail_count += 1
+        if early_fail_count == fail_count:
+            pass
+
+    assert fail_count < 3, \
+        "error running smoothing_function for a random forest regressor "+\
+        "(with constraint)" +\
+        "across all tol_pow options"
+
     assert np.isclose(np.sum(updated_rf.lamb), 1, rtol =1e-8),\
         "lambda should be constrained to sum to 1 if 'no_constraint=False'"
 
@@ -620,7 +641,8 @@ def test_smooth_all_regressor():
     # sanity check
     a = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
                              parents_all=True, verbose=False,
-                             sanity_check=True)
+                             sanity_check=True,
+                             inner_assess=inner_assess)
 
     no_update_pred = a.predict(X_trained)
     base_pred = random_forest.predict(X_trained)
@@ -650,39 +672,47 @@ def test_smooth_all_regressor():
 
     # general check for erroring
     fail_count = 0
-    for tol_pow in [None, 10, 20]:
+    for tol_pow in [None, 10, 20, 30]:
         early_fail_count = fail_count
         try:
             updated_rf = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
                                         parents_all=False, verbose=False,
                                         no_constraint=True,
                                         sanity_check={'sanity check':False,
-                                                      'tol_pow':None})
+                                                      'tol_pow':tol_pow},
+                                        inner_assess=inner_assess)
         except:
             fail_count += 1
         if early_fail_count == fail_count:
             pass
-    assert fail_count < 3, \
+    if fail_count > 0:
+        pass
+        #print("fail_count > 0")
+    assert fail_count < 4, \
         "error running smoothing_function for a random forest regressor " +\
         "across all tol_pow options"
 
 
     # general check for erroring, no constraint
     fail_count = 0
-    for tol_pow in [None, 10, 20]:
+    for tol_pow in [None, 10, 20, 30]:
         early_fail_count = fail_count
         try:
             updated_rf = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
                                         parents_all=False, verbose=False,
                                         no_constraint=False,
                                         sanity_check={'sanity check':False,
-                                                      'tol_pow':10})
+                                                      'tol_pow':tol_pow},
+                                        inner_assess=inner_assess)
         except:
             fail_count += 1
         if early_fail_count == fail_count:
             pass
+    if fail_count > 0:
+        pass
+        #print("fail_count > 0 (with constraints)")
 
-    assert fail_count < 3, \
+    assert fail_count < 4, \
         "error running smoothing_function for a random forest regressor "+\
         "(with constraint)" +\
         "across all tol_pow options"
@@ -695,7 +725,8 @@ def test_smooth_all_regressor():
     a = smooth_rf.smooth_all(random_forest, X_trained, y_trained,
                              parents_all=False, verbose=False,
                              sanity_check={'sanity check':True,
-                                           'tol_pow':20})
+                                           'tol_pow':20},
+                             inner_assess=inner_assess)
 
     no_update_pred = a.predict(X_trained)
     base_pred = random_forest.predict(X_trained)

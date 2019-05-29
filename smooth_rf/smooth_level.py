@@ -446,6 +446,10 @@ def check_in_null(G, v, tol_pow = None):
         both the null space of G and the v containdated by examining the
         singlar values (s) and looking at which are less than:
             max(s) * 2^tol_pow * np.finfo(float).eps
+        this same value is also used in estimating the null space for G,
+        which looks at the singular value as of G smaller in magnitude than
+        the following as associated with the null space:
+            max(n,m) * 2^tol_pow * np.finfo(float).eps
     Returns:
     --------
     value : bool
@@ -456,8 +460,13 @@ def check_in_null(G, v, tol_pow = None):
                                 np.floor(tol_pow) != tol_pow):
         raise ValueError("tol_pow needs to be a non-negative integer")
 
+    if False:#tol_pow is not None:
+        nspace = scipy.linalg.null_space(G, rcond=np.max(G.shape) *\
+                                                    2**tol_pow *\
+                                                    np.finfo(float).eps)
+    else:
+        nspace = scipy.linalg.null_space(G)
 
-    nspace = scipy.linalg.null_space(G)
     null_rank = nspace.shape[1]
 
     if null_rank == 0:
@@ -465,7 +474,8 @@ def check_in_null(G, v, tol_pow = None):
 
     large_mat = np.concatenate((nspace, v.reshape((-1,1))), axis=1)
     if tol_pow is not None:
-        _, s = np.linalg.svd(large_mat,compute_uv=False)
+        s = np.linalg.svd(large_mat,compute_uv=False)
+
         larger_rank = np.linalg.matrix_rank(large_mat,
                                             tol=s.max() *\
                                                 2**tol_pow *\
@@ -478,7 +488,8 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
                verbose=True,
                no_constraint=False,
                sanity_check={"sanity check":False, "tol_pow":None},
-               resample_tune=False,parents_all=False):
+               resample_tune=False,parents_all=False,
+               inner_assess=False):
     """
     creates a smooth random forest (1 lambda set across all trees)
 
@@ -502,12 +513,14 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
         if the first, logic to do full process but keep same weights
         if the second, a dictionary with "santity check" as a bool defined
         above and "tol_pow" as the value to put into smooth_rf.check_in_null
-        function
+        function relative to analysis inner_assess analysis.
     resample_tune: bool
         logic to tune / optimize with another bootstrap same from X
     parents_all : bool
         logic to instead include all observations with parent of distance k
         away
+    inner_assess : bool
+        if one should assess if the base rf lamb beats the current lamb value
 
     Returns:
     --------
@@ -693,9 +706,10 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
         #if not (cost_base >= cost_actual):
         #    pdb.set_trace()
         if not check_in_null(G, lamb_base - lamb,tol_pow=tol_pow):
-            assert cost_base >= cost_actual, \
-                "the base lambda is inside the options of lambda, "+\
-                "so there is a problem with the minimization"
+            if inner_assess:
+                assert cost_base >= cost_actual, \
+                    "the base lambda is inside the options of lambda, "+\
+                    "so there is a problem with the minimization"
 
 
     if sanity_check:
