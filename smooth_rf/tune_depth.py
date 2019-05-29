@@ -177,7 +177,7 @@ def depth_tune(random_forest, X_trained=None, y_trained=None,
     # updating a random forest
     inner_rf = copy.deepcopy(random_forest)
 
-    for t in first_iter:
+    for t in inner_rf.estimators_:
         tree = t.tree_
         pred_leaf = leaf_predicted_values(t)
         tree.value[tree.children_left == -1] = pred_leaf[best_depth].reshape(tree.value[tree.children_left == -1].shape)
