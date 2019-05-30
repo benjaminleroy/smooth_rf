@@ -11,6 +11,8 @@ import sys
 import copy
 import pickle
 import itertools
+from joblib import Parallel, delayed
+import time
 
 import smooth_rf
 
@@ -18,7 +20,7 @@ path = "../"
 
 data_set = sys.argv[1]
 reg_or_class = sys.argv[2]
-n_trees = sys.argv[3]
+n_trees = np.int(sys.argv[3])
 
 def pull_data(data_set, path, reg_or_class="reg"):
     if data_set == "microsoft":
@@ -122,7 +124,7 @@ def generate_rf(X_train, y_train, n_trees, reg_or_class="reg"):
 def assess_rf(random_forest, X_test, y_test):
     if type(random_forest) == sklearn.ensemble.RandomForestRegressor:
         scoring = sklearn.metrics.mean_squared_error
-    elif type(random_forest) == sklearn.ensemble.RandomForestClassifier
+    elif type(random_forest) == sklearn.ensemble.RandomForestClassifier:
         scoring = sklearn.metrics.accuracy_score
     else:
         ValueError("inputed random forest's class is not 1 of the expected options")
@@ -161,43 +163,97 @@ random_forest = copy.deepcopy(rf_base)
 
 
 # depth analysis --------------
-print("Depth tune\n")
+print("Depth tune:")
+time_start = time.time()
+
 depth_tune_rf = smooth_rf.depth_tune(random_forest,
                                      X_trained=X_train,
-                                     y_trained=y_trained)
+                                     y_trained=y_train)
 
 scoring_dict["depth_tune"] =  assess_rf(depth_tune_rf,
                                      X_test, y_test)
 info_dict["depth_tune"] = depth_tune_rf.loss_vec_depth
+
+depth_spent = time.time() - time_start
+
 # wOLS analysis --------------
-print("wOLS")
-inner_distance_opts = ["standard", "max", "min"] #inner_distance
+print("wOLS:")
+time_start = time.time()
+
 parent_all_opts = [True, False] # parent_all
 no_constraint_opts = [True, False] # no_constraint
 
-for inner_distance, parent_all, no_constraint_opts in \
-     itertools.product(inner_distance_opts, parent_all_opts, no_constraint_opts):
-            wOLS_opt_rf = smooth_rf.smooth_all(random_forest,
-                                               X_trained=X_train,
-                                               y_trained=y_train,
-                                               no_constraint=no_constraint,
-                                               parents_all=parent_all,
-                                               verbose=True)
+# for parent_all, no_constraint in \
+#      itertools.product(parent_all_opts, no_constraint_opts):
+#             wOLS_opt_rf = smooth_rf.smooth_all(random_forest,
+#                                                X_trained=X_train,
+#                                                y_trained=y_train,
+#                                                no_constraint=no_constraint,
+#                                                parents_all=parent_all,
+#                                                distance
+#                                                verbose=True)
 
-            name = "wOLs_opt" + "dist:" + inner_distance +\
-                        "parents:" + str(parents_all) +\
-                        "constraints:" + str(not no_constraint)
+#             name = "wOLs_opt" +\
+#                         "parents:" + str(parent_all) +\
+#                         "constraints:" + str(not no_constraint)
 
-            scoring_dict[name] = assess_rf(wOLS_opt_rf,
-                                     X_test, y_test)
-            info_dict[name] = wOLS_opt_rf.lamb
+#             scoring_dict[name] = assess_rf(wOLS_opt_rf,
+#                                      X_test, y_test)
+#             info_dict[name] = wOLS_opt_rf.lamb
 
+
+
+def smooth_all_wrapper(random_forest,
+                   X_train, y_train,
+                   params):
+    parent_all, no_constraint = params
+    wOLS_opt_rf = smooth_rf.smooth_all(random_forest,
+                                       X_trained=X_train,
+                                       y_trained=y_train,
+                                       no_constraint=no_constraint,
+                                       parents_all=parent_all,
+                                       verbose=False)
+
+    name = "wOLs_opt" +\
+                "_parents:" + str(parent_all) +\
+                ",constraints:" + str(not no_constraint)
+
+    scoring = assess_rf(wOLS_opt_rf,
+                             X_test, y_test)
+    info = wOLS_opt_rf.lamb
+
+    return scoring, info, name
+
+s_all_output = Parallel(n_jobs=-1, verbose=10)(delayed(smooth_all_wrapper)(random_forest,
+                                       X_train,
+                                       y_train,
+                                       params) for params in itertools.product(parent_all_opts, no_constraint_opts))
+
+# a = list()
+# for params in itertools.product(parent_all_opts, no_constraint_opts):
+#     a.append(smooth_all_wrapper(random_forest,
+#                                        X_train,
+#                                        y_train,
+#                                        params))
+
+for scoring, info, name in s_all_output:
+    scoring_dict[name] = scoring
+    info_dict[name] = info
+
+wols_spent = time.time() - time_start
+times = [depth_spent, wols_spent]
 
 # saving before ----------
-pickle # fill in
+with open("", "wb") as pfile:
+    pickle.dump({"seed":seed,
+                 "time":times,
+                 "scoring":score_dict,
+                 "info":info_dict},
+                file = "data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+".pkl")
 
 # element approach --------------
 print("element approach, Adam")
+time_start = time.time()
 
 # adam
 alphas = [10**-3, 10**-2, 10**-1, .3]
@@ -209,47 +265,138 @@ epsilons = [10**-8, 10**-4]
 inner_distance_opts = ["standard", "max", "min"] #inner_distance
 parent_all_opts = [True, False] # parent_all
 no_constraint_opts = [True, False] # no_constraint
-initial_lamb_opts in [seed, None] # initial_lamb
-class_loss_opts in ["ce", "l2"] # class_loss
-adam_values_opts in itertools.product(alphas, beta_1s, beta_0s, epsilons) # adam_values
-for inner_distance, parent_all, no_constraint, initial_lamb, class_loss, \
-    adam_values in itertools.product(inner_distance_opts,
-                                     parent_all_opts,
-                                     no_constraint_opts,
-                                     initial_lamb_opts,
-                                     class_loss_opts,
-                                     adam_values_opts):
+initial_lamb_opts = [seed, None] # initial_lamb
+class_loss_opts = ["ce", "l2"] # class_loss
+adam_values_opts = itertools.product(alphas, beta_1s, beta_0s, epsilons) # adam_values
+# for inner_distance, parent_all, no_constraint, initial_lamb, class_loss, \
+#     adam_values in itertools.product(inner_distance_opts,
+#                                      parent_all_opts,
+#                                      no_constraint_opts,
+#                                      initial_lamb_opts,
+#                                      class_loss_opts,
+#                                      adam_values_opts):
+#     a, b1, b2, e = adam_values
+#     adam_dict = {"alpha": a,
+#                  "beta_1": b1,
+#                  "beta_2": b2,
+#                  "eps": e}
+#     adam_rf, _ , _ , c = smooth_rf.smooth(
+#                             random_forest,
+#                             X_trained=X_train,
+#                             y_trained=y_train,
+#                             no_constraint=no_constraint,
+#                             sgd_max_num=10000,
+#                             all_trees=False,
+#                             initial_lamb_seed=initial_lamb,
+#                             parents_all=False,
+#                             distance_style=inner_distance,
+#                             class_eps=0.0001,
+#                             class_loss=class_loss,
+#                             adam=adam_dict)
+#     if seed is not None:
+#         il = str(seed)
+#     else:
+#         il = "rf"
+
+#     name = "element_opt" +\
+#         "parents:" + str(parent_all) +\
+#         "constraints:" + str(not no_constraint) +\
+#         "dist:" + inner_distance +\
+#         "initial_lamb:" + il +\
+#         "adam_options:" + str(adam_values).replace(", ", "_")
+
+#     scoring_dict[name] = assess_rf(wOLS_opt_rf,
+#                                    X_test, y_test)
+#     info_dict[name] = wOLS_opt_rf.lamb
+
+def smooth_wrapper(random_forest,
+                   X_train, y_train,
+                   params):
+    inner_distance, parent_all, no_constraint, initial_lamb, class_loss, \
+    adam_values = params
+
     a, b1, b2, e = adam_values
     adam_dict = {"alpha": a,
                  "beta_1": b1,
                  "beta_2": b2,
                  "eps": e}
+
     adam_rf, _ , _ , c = smooth_rf.smooth(
-                            random_forest,
-                            X_trained=X_train,
-                            y_trained=y_train,
-                            no_constraint=no_constraint,
-                            sgd_max_num=10000,
-                            all_trees=False,
-                            initial_lamb_seed=initial_lamb,
-                            parents_all=False,
-                            distance_style=inner_distance,
-                            class_eps=0.0001,
-                            class_loss=class_loss,
-                            adam=adam_dict)
+        random_forest,
+        X_trained=X_train,
+        y_trained=y_train,
+        no_constraint=no_constraint,
+        sgd_max_num=10000,
+        all_trees=False,
+        initial_lamb_seed=initial_lamb,
+        parents_all=False,
+        distance_style=inner_distance,
+        class_eps=0.0001,
+        class_loss=class_loss,
+        adam=adam_dict,
+        verbose=False)
+
     if seed is not None:
         il = str(seed)
     else:
         il = "rf"
 
-    name = "element_opt" + "dist:" + inner_distance +\
-        "parents:" + str(parents_all) +\
-        "constraints:" + str(not no_constraint) +\
-        "initial_lamb:" + il +\
-        "adam_options:" + str(adam_values).replace(", ", "_")
+    name = "element_opt" +\
+        "_dist:" + inner_distance +\
+        ",parents:" + str(parent_all) +\
+        ",constraints:" + str(not no_constraint) +\
+        ",initial_lamb:" + il +\
+        ",adam_options:" + str(adam_values).replace(", ", "_")
 
-    scoring_dict[name] = assess_rf(wOLS_opt_rf,
-                                   X_test, y_test)
-    info_dict[name] = wOLS_opt_rf.lamb
+    scoring = assess_rf(adam_rf, X_test, y_test)
+    info = adam_rf.lamb
+
+    return name, scoring, info
+
+num_jobs = len(list(itertools.product(inner_distance_opts,
+                                     parent_all_opts,
+                                     no_constraint_opts,
+                                     initial_lamb_opts,
+                                     class_loss_opts,
+                                     list(itertools.product(alphas, beta_1s, beta_0s, epsilons)))))
+
+print("must complete " + str(num_jobs) + " number of jobs")
+
+s_all_output = Parallel(n_jobs=-1, verbose=10)(delayed(smooth_wrapper)(random_forest,
+                                       X_train,
+                                       y_train,
+                                       params) for params in itertools.product(inner_distance_opts,
+                                     parent_all_opts,
+                                     no_constraint_opts,
+                                     initial_lamb_opts,
+                                     class_loss_opts,
+                                     list(itertools.product(alphas, beta_1s, beta_0s, epsilons))))
+# a = list()
+# for params in itertools.product(inner_distance_opts,
+#                                      parent_all_opts,
+#                                      no_constraint_opts,
+#                                      initial_lamb_opts,
+#                                      class_loss_opts,
+#                                      list(itertools.product(alphas, beta_1s, beta_0s, epsilons))):
+#     print('.')
+#     a.append(smooth_wrapper(random_forest,
+#                                        X_train,
+#                                        y_train,
+#                                        params))
+
+for name, scoring, info in s_all_output:
+    scoring_dict[name] = scoring
+    info_dict[name] = info
+
+adam_spent = time.time() - time_start
+times.append(adam_spent)
+
+
+with open("", "wb") as pfile:
+    pickle.dump({"seed":seed,
+                 "time":times,
+                 "scoring":score_dict,
+                 "info":info_dict},
+                file = "data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+".pkl")
 
 
