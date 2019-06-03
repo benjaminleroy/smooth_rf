@@ -19,17 +19,15 @@ import pdb
 # some built functions libraries
 # sys.path.append("../../filament_and_rfdepth/code/functions/")
 # import projected_grad_lamb_update as projgrad
-import smooth_rf
-from smooth_rf import depth_per_node, create_Gamma_eta_forest
 
+from . import smooth_base
 ##################################
 # Base Tree and Forest Structure #
 ##################################
 # Comments:
-# this following 3 functions were
-# originally developed by me for a different project and then used in a
-# class project at CMU, this is don't copied illegally, I just haven't
-# linking all the older versions.
+# this following 3 functions were originally developed by me for a different
+# project and then used in a class project at CMU, this is don't copied
+# illegally, I just haven't linking all the older versions.
 
 
 def make_Vt_mat(random_forest, data, verbose = True, depth_dict = None):
@@ -61,7 +59,7 @@ def _make_Vt_mat_tree(tree, data, depth_vec = None):
     in a random forest (index t)
     """
     if depth_vec is None:
-        depth_vec = depth_per_node(tree)
+        depth_vec = smooth_base.depth_per_node(tree)
 
     Vt_full = tree.decision_path(data)
 
@@ -570,7 +568,7 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
     inner_rf = copy.deepcopy(random_forest)
     forest = inner_rf.estimators_
 
-    _, max_depth = smooth_rf.calc_depth_for_forest(random_forest,verbose=False)
+    _, max_depth = smooth_base.calc_depth_for_forest(random_forest,verbose=False)
     max_depth = np.int(max_depth)
 
     obs_y_leaf_all = np.zeros(0)
@@ -618,7 +616,7 @@ def smooth_all(random_forest, X_trained, y_trained, X_tune=None, y_tune=None,
         obs_y_leaf_all = np.hstack((obs_y_leaf_all,
                                     np.array(obs_y_leaf).ravel()))
 
-    ga, et, _ = smooth_rf.create_Gamma_eta_forest(inner_rf,
+    ga, et, _ = smooth_base.create_Gamma_eta_forest(inner_rf,
                                                     verbose=verbose,
                                                     parents_all=parents_all)
 

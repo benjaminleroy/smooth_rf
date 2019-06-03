@@ -928,6 +928,39 @@ def test_smooth_regressor():
             "classifier with adam"
 
 
+    # harder example
+    X_trained = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (200,2)),
+        np.random.normal(loc = (.5,2), scale = .6, size = (200,2))),
+        axis = 0)
+    y_trained = np.concatenate((np.zeros(200, dtype = np.int),
+                         np.ones(200, dtype = np.int))) + 100
+    amount = np.int(400)
+    # creating a random forest
+    rf_reg = sklearn.ensemble.RandomForestRegressor(
+                                                    n_estimators = 10,
+                                                    min_samples_leaf = 1)
+    fit_reg = rf_reg.fit(X = np.array(X_trained)[:amount,:],
+                                  y = y_trained[:amount].ravel())
+    forest = fit_reg.estimators_
+
+    random_forest = fit_reg
+    verbose = False
+    parents_all = True
+    distance_style = "standard"
+
+    # general check for erroring
+    try:
+        a,b,c,d = smooth_rf.smooth(random_forest, X_trained, y_trained,
+                                    parents_all=parents_all, verbose = verbose,
+                                    adam = {"alpha": .001, "beta_1": .9,
+                                            "beta_2": .999,"eps": 1e-8})
+
+    except:
+        assert False, \
+            "error running smoothing_function for a random forest regressor"
+
+
 def test_bound_box_tree():
     """
     test bound_box_tree function (static and random shape analysis)

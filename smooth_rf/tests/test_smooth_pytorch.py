@@ -10,6 +10,8 @@ import sys, os
 from collections import Counter
 
 import torch
+from torch.utils.data import DataLoader, Dataset, RandomSampler, \
+                                SequentialSampler
 
 import smooth_rf
 
@@ -448,39 +450,180 @@ def test_node_spatial_structure_update():
         "static and calcuated two_d_dict values differ"
 
 
-# def test_update_rf():
-#     """
-#     test update_rf
-#     """
+def test_update_rf():
+    """
+    test update_rf
+    """
 
-#     pass
-#     # data, y = smooth_rf.generate_data(650)
+    data, y = smooth_rf.generate_data(650)
+    X_trained = data
+    y_trained = y
+    data_test, y_test = smooth_rf.generate_data(10000)
 
-#     # data_test, y_test = smooth_rf.generate_data(10000)
+    # classification
+    model_type = sklearn.ensemble.RandomForestClassifier
 
-#     # model_type = sklearn.ensemble.RandomForestRegressor
+    model = model_type(n_estimators=2)
+    model_fit = model.fit(data, y)
+    random_forest = model_fit
 
-#     # model = model_type(n_estimators=2)
-#     # model_fit = model.fit(data, y)
-#     # random_forest = model_fit
+    max_iter = 10000
 
-#     # max_iter = 10000
+    y_all, Gamma, eta, weights_all, t_idx_vec, \
+        one_d_dict, two_d_dict, lamb_dim, num_classes \
+         = smooth_rf.pytorch_numpy_prep(random_forest,
+                              X_trained = X_trained, y_trained = y_trained,
+                              distance_style="standard",
+                              parents_all=True,
+                              verbose=False,
+                              train_only=True)
 
-#     # smooth_rf_pytorch, loss_all, loss_min, params_min, best_model, \
-#     #     (torch_model, forest_dataset, dataloader) = \
-#     #     smooth_rf.smooth_pytorch(random_forest = random_forest,
-#     #            X_trained=data, y_trained=y,
-#     #            X_tune=None, y_tune=None,
-#     #            resample_tune=False,
-#     #            sgd_max_num=max_iter,
-#     #            all_trees=False,
-#     #            parents_all=True,
-#     #            distance_style="standard",
-#     #            which_dicts=["one_d_dict", "two_d_dict"],
-#     #            verbose=False)
+    forest_dataset = smooth_rf.ForestDataset(y_all, Gamma, eta, weights_all,
+                            t_idx_vec, one_d_dict, two_d_dict, lamb_dim)
+    dataloader = smooth_rf.DataLoader(dataset = forest_dataset,
+                            sampler = RandomSampler(forest_dataset,
+                                                    replacement=True)) # doesn't have to go through all trees in 1 iteration
 
-#     # y_pred_test_base = random_forest.predict(data_test)
-#     # y_pred_test_smooth = smooth_rf_pytorch.predict(data_test)
+    init = 100
+    num_vars = len(one_d_dict) + len(two_d_dict)
 
-#     # smooth_rf.acc_np(y_pred_test_base, y_test)
-#     # smooth_rf.acc_np(y_pred_test_smooth, y_test)
+    torch_model = smooth_rf.SoftmaxTreeFit(num_vars=num_vars, lamb_dim=lamb_dim,
+                                 init=init)
+    criterion = smooth_rf.weighted_l2
+    optimizer = torch.optim.Adam(torch_model.parameters())
+
+    smooth_rf_pytorch = smooth_rf.update_rf(random_forest,
+                         pytorch_model=torch_model,
+                         X_trained=X_trained,
+                         y_trained=y_trained,
+                         parents_all=True,
+                         distance_style="standard",
+                         verbose=False)
+    y_pred_test_base = random_forest.predict(data_test)
+    y_pred_test_base_prob = random_forest.predict_proba(data_test)
+
+    y_pred_test_smooth = smooth_rf_pytorch.predict(data_test)
+    y_pred_test_smooth_prob = smooth_rf_pytorch.predict_proba(data_test)
+
+    assert np.all(y_pred_test_base == y_pred_test_smooth), \
+        "update of random forest with really weak weights should produce "+\
+        "the same predictions are the base rf"
+    assert np.any(y_pred_test_base_prob != y_pred_test_smooth_prob), \
+        "update of random forest with really weak weights should produce "+\
+        "slightly different probabilities"
+
+    # regression
+    model_type = sklearn.ensemble.RandomForestRegressor
+
+    model = model_type(n_estimators=2)
+    model_fit = model.fit(data, y)
+    random_forest = model_fit
+
+    max_iter = 10000
+
+    y_all, Gamma, eta, weights_all, t_idx_vec, \
+        one_d_dict, two_d_dict, lamb_dim, num_classes \
+         = smooth_rf.pytorch_numpy_prep(random_forest,
+                              X_trained = X_trained, y_trained = y_trained,
+                              distance_style="standard",
+                              parents_all=True,
+                              verbose=False,
+                              train_only=True)
+
+    forest_dataset = smooth_rf.ForestDataset(y_all, Gamma, eta, weights_all,
+                            t_idx_vec, one_d_dict, two_d_dict, lamb_dim)
+    dataloader = smooth_rf.DataLoader(dataset = forest_dataset,
+                            sampler = RandomSampler(forest_dataset,
+                                                    replacement=True)) # doesn't have to go through all trees in 1 iteration
+
+    init = 100
+    num_vars = len(one_d_dict) + len(two_d_dict)
+
+    torch_model = smooth_rf.SoftmaxTreeFit(num_vars=num_vars, lamb_dim=lamb_dim,
+                                 init=init)
+    criterion = smooth_rf.weighted_l2
+    optimizer = torch.optim.Adam(torch_model.parameters())
+
+    smooth_rf_pytorch = smooth_rf.update_rf(random_forest,
+                         pytorch_model=torch_model,
+                         X_trained=X_trained,
+                         y_trained=y_trained,
+                         parents_all=True,
+                         distance_style="standard",
+                         verbose=False)
+    y_pred_test_base = random_forest.predict(data_test)
+
+    y_pred_test_smooth = smooth_rf_pytorch.predict(data_test)
+
+    assert np.allclose(y_pred_test_base,y_pred_test_smooth), \
+        "update of random forest with really weak weights should produce "+\
+        "the really close predicted values are the base rf"
+    assert np.any(y_pred_test_base != y_pred_test_smooth), \
+        "update of random forest with really weak weights should produce "+\
+        "slightly different predicted values"
+
+
+
+
+def test_smooth_pytorch_classifier():
+    """
+    test for smooth- classifier, only runs on example dataset, checks for errs
+    """
+
+    X_trained = np.concatenate(
+    (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
+    np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
+    axis = 0)
+    y_trained = np.concatenate((np.zeros(100, dtype = np.int),
+                         np.ones(100, dtype = np.int)))
+    amount = np.int(200)
+
+    # creating a random forest
+    rf_class_known = sklearn.ensemble.RandomForestClassifier(
+                                                    n_estimators = 5,
+                                                    min_samples_leaf = 1)
+    fit_rf_known = rf_class_known.fit(X = np.array(X_trained)[:amount,:],
+                                  y = y_trained[:amount].ravel())
+    forest = fit_rf_known.estimators_
+
+    random_forest = fit_rf_known
+
+    # general check for erroring
+    try:
+        a = smooth_rf.smooth_pytorch(random_forest, X_trained, y_trained,
+                                     parents_all=True, verbose = False)
+    except:
+        assert False, \
+            "error running smooth_pytorch for a random forest classifier"
+
+def test_smooth_pytorch_regression():
+    """
+    test for smooth- regressor, only runs on example dataset, checks for errs
+    """
+
+    X_trained = np.concatenate(
+    (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
+    np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
+    axis = 0)
+    y_trained = np.concatenate((np.zeros(100, dtype = np.int),
+                         np.ones(100, dtype = np.int))) + 100
+    amount = np.int(200)
+
+    # creating a random forest
+    rf_class_known = sklearn.ensemble.RandomForestRegressor(
+                                                    n_estimators = 5,
+                                                    min_samples_leaf = 1)
+    fit_rf_known = rf_class_known.fit(X = np.array(X_trained)[:amount,:],
+                                  y = y_trained[:amount].ravel())
+    forest = fit_rf_known.estimators_
+
+    random_forest = fit_rf_known
+
+    # general check for erroring
+    try:
+        a = smooth_rf.smooth_pytorch(random_forest, X_trained, y_trained,
+                                     parents_all=True, verbose = False)
+    except:
+        assert False, \
+            "error running smooth_pytorch for a random forest regressor"
+

@@ -15,8 +15,7 @@ from torch.utils.data import DataLoader, Dataset, RandomSampler, \
                                 SequentialSampler
 import torch.nn
 
-import smooth_rf
-
+from . import smooth_base
 
 def pytorch_numpy_prep(random_forest, X_trained, y_trained,
                        X_tune=None, y_tune=None,resample_tune=False,
@@ -149,13 +148,13 @@ def pytorch_numpy_prep(random_forest, X_trained, y_trained,
     if oob_logic or resample_tune or train_only:
         n_obs_trained = X_trained.shape[0]
 
-    _, max_depth = smooth_rf.calc_depth_for_forest(random_forest,verbose=False)
+    _, max_depth = smooth_base.calc_depth_for_forest(random_forest,verbose=False)
     max_depth = np.int(max_depth)
 
     forest = random_forest.estimators_
 
     Gamma, eta, t_idx_vec, leaf_n, leaf_d, leaf_i, full_d, full_i = \
-        smooth_rf.create_Gamma_eta_forest_more(random_forest,
+        smooth_base.create_Gamma_eta_forest_more(random_forest,
                                      verbose=verbose,
                                      parents_all=parents_all,
                                      dist_mat_style=distance_style)
@@ -331,7 +330,7 @@ def node_spatial_structure_update(random_forest, X_trained,
 
         # iterate across trees
         for tree in random_forest.estimators_:
-            center_t = smooth_rf.center_tree(tree, X_trained)
+            center_t = smooth_base.center_tree(tree, X_trained)
             cl = tree.tree_.children_left
 
             for col_num in range(n_col):
@@ -343,7 +342,7 @@ def node_spatial_structure_update(random_forest, X_trained,
 
 
     if two_d_dict is not None:
-        _, max_depth = smooth_rf.calc_depth_for_forest(random_forest,
+        _, max_depth = smooth_base.calc_depth_for_forest(random_forest,
                                                        verbose = False) # techincally repeats 1/2 the calculations in depth_per_node_plus_parent
         max_depth = np.int(max_depth) + 1
         # set up of each dimensions' center
@@ -352,8 +351,8 @@ def node_spatial_structure_update(random_forest, X_trained,
 
         # iterate across trees
         for t_idx, tree in enumerate(random_forest.estimators_):
-            center_t = smooth_rf.center_tree(tree, X_trained)
-            _, parent_mat = smooth_rf.depth_per_node_plus_parent(tree)
+            center_t = smooth_base.center_tree(tree, X_trained)
+            _, parent_mat = smooth_base.depth_per_node_plus_parent(tree)
 
             cl = tree.tree_.children_left
             parent_mat = parent_mat[cl == -1,:]
@@ -550,7 +549,7 @@ class SoftmaxTreeFit(torch.nn.Module):
             all coefficients are randomly initialized under standard pytorch
             protocols. Else, it's expected to be a positive scalar which is
             the weight of the bias terms to make the lambdas very similar to
-            the standard random forest weights (see details). Default
+            the standard random forest weights (see details). Default is 5.
 
 
         Attributes:
@@ -815,124 +814,6 @@ def update_rf(random_forest, pytorch_model,
     return inner_rf
 
 
-
-def update_rf_middle(random_forest, pytorch_forest, pytorch_model):
-    """
-    update a sklearn random forest model with tuned pytorch model
-
-    Arguments:
-    ----------
-    random_forest : sklearn forest
-            (sklearn.ensemble.forest.RandomForestRegressor or
-            sklearn.ensemble.forest.RandomForestClassifier)
-        grown forest
-    pytorch_forest: forest class object (pytorch Dataset object)
-    pytorch_model: SoftmaxTreeFit class object (pytorch model object)
-
-    Returns:
-    --------
-    inner_rf : updated smooth random forest
-    """
-
-    if type(random_forest) is sklearn.ensemble.RandomForestClassifier:
-        rf_type = "class"
-    elif type(random_forest) is sklearn.ensemble.RandomForestRegressor:
-        rf_type = "reg"
-    else:
-        ValueError("random_forest needs to be either a " +\
-                   "sklearn.ensemble.RandomForestClassifier " +\
-                   "or a sklearn.ensemble.RandomForestRegressor")
-
-
-    data_loader_inner = DataLoader(dataset = pytorch_forest,
-                                   sampler = SequentialSampler(pytorch_forest)
-                                   # ^ not sure this is needed...
-                                   )
-    inner_rf = copy.deepcopy(random_forest)
-    forest = inner_rf.estimators_
-
-    if rf_type == "class":
-        num_classes = inner_rf.n_classes_
-
-    for i, x in enumerate(data_loader_inner): # not sure this works...
-        #y_tree, _, _, _, _ = x # shouldn't this be y_tree, _ = pytorch_model(x)?
-        y_tree, _ = pytorch_model(x) # this changes x...
-
-        y_tree = y_tree.detach().numpy()
-
-        t = forest[i]
-        tree = t.tree_
-        num_leaf = np.sum(tree.children_left == -1)
-
-        if rf_type == "reg":
-            tree.value[tree.children_left == -1,:,:] = \
-                y_tree.reshape((-1,1,1))
-        else:
-            tree.value[tree.children_left == -1,:,:] = \
-                y_tree.reshape((-1,1,num_classes), order = "F")
-
-    return inner_rf
-
-
-def update_rf_old(random_forest, pytorch_forest, pytorch_model):
-    """
-    update a sklearn random forest model with tuned pytorch model
-
-    Arguments:
-    ----------
-    random_forest : sklearn forest
-            (sklearn.ensemble.forest.RandomForestRegressor or
-            sklearn.ensemble.forest.RandomForestClassifier)
-        grown forest
-    pytorch_forest: forest class object (pytorch Dataset object)
-    pytorch_model: SoftmaxTreeFit class object (pytorch model object)
-
-    Returns:
-    --------
-    inner_rf : updated smooth random forest
-    """
-
-    if type(random_forest) is sklearn.ensemble.RandomForestClassifier:
-        rf_type = "class"
-    elif type(random_forest) is sklearn.ensemble.RandomForestRegressor:
-        rf_type = "reg"
-    else:
-        ValueError("random_forest needs to be either a " +\
-                   "sklearn.ensemble.RandomForestClassifier " +\
-                   "or a sklearn.ensemble.RandomForestRegressor")
-
-
-    data_loader_inner = DataLoader(dataset = pytorch_forest,
-                                   sampler = SequentialSampler(pytorch_forest)
-                                   # ^ not sure this is needed...
-                                   )
-    inner_rf = copy.deepcopy(random_forest)
-    forest = inner_rf.estimators_
-
-    if rf_type == "class":
-        num_classes = inner_rf.n_classes_
-
-    for i, x in enumerate(data_loader_inner):
-        #y_tree, _, _, _, _ = x # shouldn't this be y_tree, _ = pytorch_model(x)?
-        # y_item, Gamma_item, eta_item, weights_item, \
-        #     softmax_structure_item = x
-        y_tree, weights = pytorch_model(x)
-        y_tree = y_tree.detach().numpy()
-
-        t = forest[i]
-        tree = t.tree_
-        num_leaf = np.sum(tree.children_left == -1)
-
-        if rf_type == "reg":
-            tree.value[tree.children_left == -1,:,:] = \
-                y_tree.reshape((-1,1,1))
-        else:
-            tree.value[tree.children_left == -1,:,:] = \
-                y_tree.reshape((-1,1,num_classes), order = "F")
-
-    return inner_rf
-
-
 def smooth_pytorch(random_forest, X_trained, y_trained,
                X_tune=None, y_tune=None, resample_tune=False,
                sgd_max_num=1000, all_trees=False, parents_all=False,
@@ -1035,11 +916,10 @@ def smooth_pytorch(random_forest, X_trained, y_trained,
         od, td = node_spatial_structure_update(random_forest, X_trained,
                                                one_d_dict=x_input_one_d_dict,
                                                two_d_dict=x_input_two_d_dict)
-
-    if od is not None:
-        one_d_dict = od
-    if td is not None:
-        two_d_dict = td
+        if od is not None:
+            one_d_dict = od
+        if td is not None:
+            two_d_dict = td
 
     num_vars = len(one_d_dict) + len(two_d_dict)
     num_trees = random_forest.n_estimators
@@ -1068,7 +948,6 @@ def smooth_pytorch(random_forest, X_trained, y_trained,
     loss_all = []
     loss_min = np.inf
     params_min = []
-    verbose = True
 
     first_iter = range(sgd_max_num // num_trees)
 

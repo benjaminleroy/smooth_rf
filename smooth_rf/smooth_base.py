@@ -28,7 +28,7 @@ import sklearn.ensemble
 import sklearn
 import pdb
 
-import smooth_rf.adam_sgd as adam_sgd
+from . import adam_sgd
 
 ##################################
 # Base Tree and Forest Structure #
@@ -587,13 +587,12 @@ def take_gradient(y, Gamma, eta, weights, lamb):
     """
     Gamma_fill = Gamma @ lamb
     eta_fill = eta @ lamb
+
+    assert np.all(Gamma_fill[eta_fill == 0] == 0), \
+        "whenever Gamma @ lamb == 0, then eta @ lamb should equal 0"
+
     eta_fill[eta_fill == 0] = 1 # to avoid divide by 0.
     residuals = y - Gamma_fill / eta_fill
-
-    assert np.any(eta_fill != 0), \
-        "some eta * lamb are zero - which doesn't make sense - "+\
-        "try all positive lamb" +\
-        "\n Ben: this may happen now - when using global structure"
 
     grad_yhat = scipy.sparse.diags(1/eta_fill) @ Gamma - \
                     scipy.sparse.diags(Gamma_fill/eta_fill**2) @ eta
@@ -641,13 +640,12 @@ def take_gradient_ce(p, Gamma, eta, weights, lamb):
     Gamma_fill = Gamma @ lamb
     eta_fill = eta @ lamb
     eta_fill2 = eta_fill
+    assert np.all(Gamma_fill[eta_fill == 0] == 0), \
+        "whenever Gamma @ lamb == 0, then eta @ lamb should equal 0"
+
     eta_fill2[eta_fill == 0] = 1 # to avoid divide by 0.
     phat = Gamma_fill / eta_fill2
 
-    assert np.any(eta_fill2 != 0), \
-        "some eta * lamb are zero - which doesn't make sense - "+\
-        "try all positive lamb" +\
-        "\n Ben: this may happen now - when using global structure"
 
     left_npp = -weights*p / phat
     right_crazy = (Gamma.T @ np.diag(eta_fill) - eta.T @ np.diag(Gamma_fill)) \
@@ -781,7 +779,11 @@ def calc_cost(y, Gamma, eta, weights, lamb):
     """
     Gamma_fill = Gamma @ lamb
     eta_fill = eta @ lamb
+    assert np.all(Gamma_fill[eta_fill == 0] == 0), \
+        "whenever Gamma @ lamb == 0, then eta @ lamb should equal 0"
+
     eta_fill[eta_fill == 0] = 1 # to avoid divide by 0.
+
     residuals = y - Gamma_fill / eta_fill
 
     return np.sum( (residuals**2) * weights)
@@ -1261,7 +1263,6 @@ def stocastic_grad_descent(y_leaf, weights_leaf,
         reg_sgd = True
     else:
         reg_sgd = False
-
 
     lamb = lamb_init
 
