@@ -363,12 +363,12 @@ print("must complete " + str(num_jobs) + " number of jobs")
 s_all_output = Parallel(n_jobs=-1, verbose=10)(delayed(smooth_wrapper)(random_forest,
                                        X_train,
                                        y_train,
-                                       params) for params in itertools.product(inner_distance_opts,
+                                       params) for params in list(itertools.product(inner_distance_opts,
                                      parent_all_opts,
                                      no_constraint_opts,
                                      initial_lamb_opts,
                                      class_loss_opts,
-                                     list(itertools.product(alphas, beta_1s, beta_0s, epsilons))))
+                                     list(itertools.product(alphas, beta_1s, beta_0s, epsilons)))))
 # a = list()
 # for params in itertools.product(inner_distance_opts,
 #                                      parent_all_opts,
@@ -483,12 +483,12 @@ print("must complete " + str(num_jobs) + " number of jobs")
 s_all_output = Parallel(n_jobs=-1, verbose=10)(delayed(smooth_pytorch_wrapper)(random_forest,
                                        X_train,
                                        y_train,
-                                       params) for params in itertools.product(inner_distance_opts,
+                                       params) for params in list(itertools.product(inner_distance_opts,
                                       parent_all_opts,
                                       initial_lamb_opts,
                                       which_dicts_opts,
                                       x_dicts_opts,
-                                      list(itertools.product(alphas, beta_1s, beta_0s, epsilons))))
+                                      list(itertools.product(alphas, beta_1s, beta_0s, epsilons)))))
 
 
 a = list()
