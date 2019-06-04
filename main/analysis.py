@@ -244,13 +244,13 @@ wols_spent = time.time() - time_start
 times = [depth_spent, wols_spent]
 
 # saving before ----------
-with open("", "wb") as pfile:
+with open("data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+\
+            "_"+str(seed)+".pkl",
+          "wb") as pfile:
     pickle.dump({"seed":seed,
                  "time":times,
-                 "scoring":score_dict,
-                 "info":info_dict},
-                file = "data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+".pkl")
-
+                 "scoring":scoring_dict,
+                 "info":info_dict}, file = pfile)
 # element approach --------------
 print("element approach, Adam")
 time_start = time.time()
@@ -336,8 +336,8 @@ def smooth_wrapper(random_forest,
         adam=adam_dict,
         verbose=False)
 
-    if seed is not None:
-        il = str(seed)
+    if initial_lamb is not None:
+        il = str(initial_lamb)
     else:
         il = "rf"
 
@@ -391,12 +391,134 @@ for name, scoring, info in s_all_output:
 adam_spent = time.time() - time_start
 times.append(adam_spent)
 
-
-with open("", "wb") as pfile:
+# saving
+with open("data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+\
+            "_"+str(seed)+".pkl",
+          "wb") as pfile:
     pickle.dump({"seed":seed,
                  "time":times,
-                 "scoring":score_dict,
-                 "info":info_dict},
-                file = "data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+".pkl")
+                 "scoring":scoring_dict,
+                 "info":info_dict}, file = pfile)
 
 
+
+# element approach --------------
+print("pytorch approach")
+time_start = time.time()
+
+inner_distance_opts = ["standard"] #inner_distance (note no option inner_distance_opts checked)
+parent_all_opts = [True, False] # parent_all
+initial_lamb_opts = ["r", 10] # initial_lamb
+which_dicts_opts = [[], ["one_d_dict"], ["two_d_dict"],["one_d_dict", "two_d_dict"]] # which_dicts
+x_dicts_opts = [[], ["one_d_dict"], ["two_d_dict"],["one_d_dict", "two_d_dict"]]
+adam_values_opts = itertools.product(alphas, beta_1s, beta_0s, epsilons) # adam_values
+
+def smooth_pytorch_wrapper(random_forest,
+                   X_train, y_train,
+                   params):
+    inner_distance, parent_all, initial_lamb, which_dicts, \
+        x_dicts, adam_values = params
+
+    a, b1, b2, e = adam_values
+    adam_dict = {"lr": a,
+                 "betas": (b1, b2),
+                 "eps": e}
+
+    if len(which_dicts) > 0 or len(x_dicts) > 0:
+        smooth_rf_model, _ , loss_min, params_min, _, _ = smooth_rf.smooth_pytorch(
+            random_forest,
+            X_trained=X_train,
+            y_trained=y_train,
+            sgd_max_num=10000,
+            all_trees=False,
+            init=initial_lamb,
+            parents_all=False,
+            distance_style=inner_distance,
+            adam=adam_dict,
+            verbose=False)
+    else:
+        smooth_rf_model = random_forest
+        params_min = "random forest not optimized"
+        loss_min = -np.inf
+
+    if initial_lamb == 10:
+        il = "rf"
+    else:
+        il = "r"
+
+    wd = ""
+    if "one_d_dict" in which_dicts:
+        wd += "1d"
+    if "two_d_dict" in which_dicts:
+        wd += "2d"
+
+    xd = ""
+    if "one_d_dict" in x_dicts:
+        xd += "1d"
+    if "two_d_dict" in x_dicts:
+        xd += "2d"
+
+    name = "element_opt" +\
+        "_dist:" + inner_distance +\
+        ",parents:" + str(parent_all) +\
+        ",initial_lamb:" + il +\
+        ",wd:" + wd +\
+        ",xd:" + xd +\
+        ",adam_options:" + str(adam_values).replace(", ", "_")
+
+    scoring = assess_rf(smooth_rf_model, X_test, y_test)
+    info = None
+
+    return name, scoring, info
+
+
+
+num_jobs = len(list(itertools.product(inner_distance_opts,
+                                      parent_all_opts,
+                                      initial_lamb_opts,
+                                      which_dicts_opts,
+                                      x_dicts_opts,
+                                      list(itertools.product(alphas, beta_1s, beta_0s, epsilons)))))
+
+print("must complete " + str(num_jobs) + " number of jobs")
+
+s_all_output = Parallel(n_jobs=-1, verbose=10)(delayed(smooth_pytorch_wrapper)(random_forest,
+                                       X_train,
+                                       y_train,
+                                       params) for params in itertools.product(inner_distance_opts,
+                                      parent_all_opts,
+                                      initial_lamb_opts,
+                                      which_dicts_opts,
+                                      x_dicts_opts,
+                                      list(itertools.product(alphas, beta_1s, beta_0s, epsilons))))
+
+
+a = list()
+for params in itertools.product(inner_distance_opts,
+                                      parent_all_opts,
+                                      initial_lamb_opts,
+                                      which_dicts_opts,
+                                      x_dicts_opts,
+                                      list(itertools.product(alphas, beta_1s, beta_0s, epsilons))):
+    print('.')
+    a.append(smooth_pytorch_wrapper(random_forest,
+                                       X_train,
+                                       y_train,
+                                       params))
+
+
+for name, scoring, info in s_all_output:
+    scoring_dict[name] = scoring
+    #info_dict[name] = info
+
+pytorch_spent = time.time() - time_start
+times.append(pytorch_spent)
+
+# saving
+with open("data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+\
+            "_"+str(seed)+".pkl",
+          "wb") as pfile:
+    pickle.dump({"seed":seed,
+                 "time":times,
+                 "scoring":scoring_dict,
+                 "info":info_dict}, file = pfile)

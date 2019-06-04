@@ -821,7 +821,9 @@ def smooth_pytorch(random_forest, X_trained, y_trained,
                which_dicts=["one_d_dict", "two_d_dict"],
                x_dicts=[],
                init = 10,
-               verbose=True):
+               verbose=True,
+               adam={"lr":.001,"betas":(.9,.999),
+                     "eps":1e-08}):
     """
     Fits smooth random forest optimization. Specifically for the optimization
     that attempts to provide individual lambdas per each leaf as a function of
@@ -942,7 +944,7 @@ def smooth_pytorch(random_forest, X_trained, y_trained,
     torch_model = SoftmaxTreeFit(num_vars=num_vars, lamb_dim=lamb_dim,
                                  init=init)
     criterion = weighted_l2
-    optimizer = torch.optim.Adam(torch_model.parameters())
+    optimizer = torch.optim.Adam(torch_model.parameters(),**adam)
 
     # actual Adam SGD
     loss_all = []
