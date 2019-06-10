@@ -135,9 +135,9 @@ def assess_rf(random_forest, X_test, y_test):
 
 ## data creation ##
 X,y = pull_data(data_set, path, reg_or_class)
-seed = get_random_seed()
+my_seed = get_random_seed()
 
-np.random.seed(seed)
+np.random.seed(my_seed)
 X_train, y_train, X_test, y_test = split_data(X,y,
                                               test_size=.5)
 
@@ -153,7 +153,7 @@ info_dict = dict()
 rf_base = generate_rf(X_train, y_train, n_trees,
                       reg_or_class=reg_or_class)
 
-info_dict["seed"] = seed
+info_dict["seed"] = my_seed
 scoring_dict["rf_base"] =  assess_rf(rf_base,
                                      X_test, y_test)
 
@@ -243,9 +243,9 @@ times = [depth_spent, wols_spent]
 
 # saving before ----------
 with open("data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+\
-            "_"+str(seed)+".pkl",
+            "_"+str(my_seed)+".pkl",
           "wb") as pfile:
-    pickle.dump({"seed":seed,
+    pickle.dump({"seed":my_seed,
                  "time":times,
                  "scoring":scoring_dict,
                  "info":info_dict}, file = pfile)
@@ -263,7 +263,7 @@ epsilons = [10**-8, 10**-4]
 inner_distance_opts = ["standard", "max", "min"] #inner_distance
 parent_all_opts = [True, False] # parent_all
 no_constraint_opts = [True, False] # no_constraint
-initial_lamb_opts = [seed, None] # initial_lamb
+initial_lamb_opts = [my_seed, None] # initial_lamb
 class_loss_opts = ["ce", "l2"] # class_loss
 adam_values_opts = itertools.product(alphas, beta_1s, beta_0s, epsilons) # adam_values
 # for inner_distance, parent_all, no_constraint, initial_lamb, class_loss, \
@@ -383,17 +383,17 @@ s_all_output = Parallel(n_jobs=-1, verbose=10)(delayed(smooth_wrapper)(random_fo
 #                                        params))
 
 for name, scoring, info in s_all_output:
-    scoring_dict[name] = scoring
-    info_dict[name] = info
+    scoring_dict["smooth_element_based,"+name] = scoring
+    info_dict["smooth_element_based,"+name] = info
 
 adam_spent = time.time() - time_start
 times.append(adam_spent)
 
 # saving
 with open("data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+\
-            "_"+str(seed)+".pkl",
+            "_"+str(my_seed)+".pkl",
           "wb") as pfile:
-    pickle.dump({"seed":seed,
+    pickle.dump({"seed":my_seed,
                  "time":times,
                  "scoring":scoring_dict,
                  "info":info_dict}, file = pfile)
@@ -506,7 +506,7 @@ for params in itertools.product(inner_distance_opts,
 
 
 for name, scoring, info in s_all_output:
-    scoring_dict[name] = scoring
+    scoring_dict["smooth_pytorch_based,"+name] = scoring
     #info_dict[name] = info
 
 pytorch_spent = time.time() - time_start
@@ -514,9 +514,9 @@ times.append(pytorch_spent)
 
 # saving
 with open("data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+\
-            "_"+str(seed)+".pkl",
+            "_"+str(my_seed)+".pkl",
           "wb") as pfile:
-    pickle.dump({"seed":seed,
+    pickle.dump({"seed":my_seed,
                  "time":times,
                  "scoring":scoring_dict,
                  "info":info_dict}, file = pfile)
