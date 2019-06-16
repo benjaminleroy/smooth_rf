@@ -235,21 +235,21 @@ if reg_or_class == "reg":
 #                                        y_train,
 #                                        params))
 
-for scoring, info, name in s_all_output:
-    scoring_dict[name] = scoring
-    info_dict[name] = info
+    for scoring, info, name in s_all_output:
+        scoring_dict[name] = scoring
+        info_dict[name] = info
 
-wols_spent = time.time() - time_start
-times = [depth_spent, wols_spent]
+    wols_spent = time.time() - time_start
+    times = [depth_spent, wols_spent]
 
-# saving before ----------
-with open("data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+\
-            "_"+str(my_seed)+".pkl",
-          "wb") as pfile:
-    pickle.dump({"seed":my_seed,
-                 "time":times,
-                 "scoring":scoring_dict,
-                 "info":info_dict}, file = pfile)
+    # saving before ----------
+    with open("data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+\
+                "_"+str(my_seed)+".pkl",
+              "wb") as pfile:
+        pickle.dump({"seed":my_seed,
+                     "time":times,
+                     "scoring":scoring_dict,
+                     "info":info_dict}, file = pfile)
 # element approach --------------
 print("element approach, Adam")
 time_start = time.time()
