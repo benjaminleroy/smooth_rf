@@ -175,57 +175,58 @@ info_dict["depth_tune"] = depth_tune_rf.loss_vec_depth
 depth_spent = time.time() - time_start
 
 # wOLS analysis --------------
-print("wOLS:")
-time_start = time.time()
+if reg_or_class == "reg":
+    print("wOLS:")
+    time_start = time.time()
 
-parent_all_opts = [True, False] # parent_all
-no_constraint_opts = [True, False] # no_constraint
+    parent_all_opts = [True, False] # parent_all
+    no_constraint_opts = [True, False] # no_constraint
 
-# for parent_all, no_constraint in \
-#      itertools.product(parent_all_opts, no_constraint_opts):
-#             wOLS_opt_rf = smooth_rf.smooth_all(random_forest,
-#                                                X_trained=X_train,
-#                                                y_trained=y_train,
-#                                                no_constraint=no_constraint,
-#                                                parents_all=parent_all,
-#                                                distance
-#                                                verbose=True)
+    # for parent_all, no_constraint in \
+    #      itertools.product(parent_all_opts, no_constraint_opts):
+    #             wOLS_opt_rf = smooth_rf.smooth_all(random_forest,
+    #                                                X_trained=X_train,
+    #                                                y_trained=y_train,
+    #                                                no_constraint=no_constraint,
+    #                                                parents_all=parent_all,
+    #                                                distance
+    #                                                verbose=True)
 
-#             name = "wOLs_opt" +\
-#                         "parents:" + str(parent_all) +\
-#                         "constraints:" + str(not no_constraint)
+    #             name = "wOLs_opt" +\
+    #                         "parents:" + str(parent_all) +\
+    #                         "constraints:" + str(not no_constraint)
 
-#             scoring_dict[name] = assess_rf(wOLS_opt_rf,
-#                                      X_test, y_test)
-#             info_dict[name] = wOLS_opt_rf.lamb
+    #             scoring_dict[name] = assess_rf(wOLS_opt_rf,
+    #                                      X_test, y_test)
+    #             info_dict[name] = wOLS_opt_rf.lamb
 
 
 
-def smooth_all_wrapper(random_forest,
-                   X_train, y_train,
-                   params):
-    parent_all, no_constraint = params
-    wOLS_opt_rf = smooth_rf.smooth_all(random_forest,
-                                       X_trained=X_train,
-                                       y_trained=y_train,
-                                       no_constraint=no_constraint,
-                                       parents_all=parent_all,
-                                       verbose=False)
+    def smooth_all_wrapper(random_forest,
+                       X_train, y_train,
+                       params):
+        parent_all, no_constraint = params
+        wOLS_opt_rf = smooth_rf.smooth_all(random_forest,
+                                           X_trained=X_train,
+                                           y_trained=y_train,
+                                           no_constraint=no_constraint,
+                                           parents_all=parent_all,
+                                           verbose=False)
 
-    name = "wOLs_opt" +\
-                "_parents:" + str(parent_all) +\
-                ",constraints:" + str(not no_constraint)
+        name = "wOLs_opt" +\
+                    "_parents:" + str(parent_all) +\
+                    ",constraints:" + str(not no_constraint)
 
-    scoring = assess_rf(wOLS_opt_rf,
-                             X_test, y_test)
-    info = wOLS_opt_rf.lamb
+        scoring = assess_rf(wOLS_opt_rf,
+                                 X_test, y_test)
+        info = wOLS_opt_rf.lamb
 
-    return scoring, info, name
+        return scoring, info, name
 
-s_all_output = Parallel(n_jobs=-1, verbose=10)(delayed(smooth_all_wrapper)(random_forest,
-                                       X_train,
-                                       y_train,
-                                       params) for params in itertools.product(parent_all_opts, no_constraint_opts))
+    s_all_output = Parallel(n_jobs=-1, verbose=10)(delayed(smooth_all_wrapper)(random_forest,
+                                           X_train,
+                                           y_train,
+                                           params) for params in itertools.product(parent_all_opts, no_constraint_opts))
 
 # a = list()
 # for params in itertools.product(parent_all_opts, no_constraint_opts):
