@@ -13,6 +13,8 @@ import progressbar
 import smooth_rf
 from collections import Counter
 
+import pdb
+
 def leaf_predicted_values(tree):
     """
     Create dictionary that contains predicted values for leafs in tree
@@ -180,7 +182,13 @@ def depth_tune(random_forest, X_trained=None, y_trained=None,
     for t in inner_rf.estimators_:
         tree = t.tree_
         pred_leaf = leaf_predicted_values(t)
-        tree.value[tree.children_left == -1] = pred_leaf[best_depth].reshape(tree.value[tree.children_left == -1].shape)
+
+        # tree max depth = min(tree_max_depth, best_depth)
+        tree_best_depth = np.min([np.max(list(pred_leaf.keys())),
+                                 best_depth])
+
+        tree.value[tree.children_left == -1] = pred_leaf[tree_best_depth].reshape(tree.value[tree.children_left == -1].shape)
+
 
     inner_rf.loss_vec_depth = forest_loss
 

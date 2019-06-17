@@ -826,12 +826,24 @@ def calc_cost_ce(p, Gamma, eta, weights, lamb):
     We expect all objects (except lamb) to be raveled version, with raveling
     done across # of classes dimensions.
     """
+    try:
+        assert np.all(Gamma >= 0), \
+            "for probabilty structure Gamma should be non-negative"
+        assert np.all(lamb >= 0), \
+            "for probability structure lambda should be non-negative"
+    except:
+        pdb.set_trace()
+
     Gamma_fill = Gamma @ lamb
     eta_fill = eta @ lamb
     eta_fill[eta_fill == 0] = 1 # to avoid divide by 0.
     p_hat = Gamma_fill / eta_fill
 
-    return - np.sum(weights * p * np.log(p_hat))
+    only_use_nonzeros = (weights != 0) * (p != 0)
+
+    return - np.sum(weights[only_use_nonzeros] *\
+                    p[only_use_nonzeros] *\
+                    np.log(p_hat[only_use_nonzeros]))
 
 
 def smooth(random_forest, X_trained=None, y_trained=None,
@@ -958,6 +970,12 @@ def smooth(random_forest, X_trained=None, y_trained=None,
         reg_sgd = True
     else:
         reg_sgd = False
+
+    if rf_type == "class" and no_constraint == True:
+        raise ValueError("for probabilities for the smoothed classification "+\
+                         "rf to be consistent, you need to constrain the " +\
+                         "lambda in the simplex (no_constraint = False)")
+
 
 
     inner_rf = copy.deepcopy(random_forest)
@@ -1388,10 +1406,14 @@ def stocastic_grad_descent_ce(p_leaf, weights_leaf,
     if Gamma.shape[1] != lamb_init.shape[0]:
         raise TypeError("lamb_init needs to be the same length as the "+\
                         "number of columns in Gamma and eta")
-    if constrained and (np.sum(lamb_init)!=1 or np.any(lamb_init < 0)):
-        raise TypeError("For simplicity please initialize lamb_init with "+\
-                        "a feasible value \n(ex: np.ones(Gamma.shape[1])/"+\
-                        "Gamma.shape[1] )")
+    try:
+        if constrained and (np.sum(lamb_init)!=1 or np.any(lamb_init < 0)):
+            raise TypeError("For simplicity please initialize lamb_init with "+\
+                            "a feasible value \n(ex: np.ones(Gamma.shape[1])/"+\
+                            "Gamma.shape[1] )")
+    except:
+        pdb.set_trace()
+
     if verbose:
         bar = progressbar.ProgressBar()
         first_iter = bar(np.arange(num_steps))

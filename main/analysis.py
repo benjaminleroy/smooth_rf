@@ -263,9 +263,15 @@ epsilons = [10**-8, 10**-4]
 
 inner_distance_opts = ["standard", "max", "min"] #inner_distance
 parent_all_opts = [True, False] # parent_all
-no_constraint_opts = [True, False] # no_constraint
+if reg_or_class == "reg":
+    no_constraint_opts = [True, False] # no_constraint
+else:
+    no_constraint_opts = [False]
 initial_lamb_opts = [my_seed, None] # initial_lamb
-class_loss_opts = ["ce", "l2"] # class_loss
+if reg_or_class == "class":
+    class_loss_opts = ["ce", "l2"] # class_loss
+else:
+    class_loss_opts = ["l2"]
 adam_values_opts = itertools.product(alphas, beta_1s, beta_0s, epsilons) # adam_values
 # for inner_distance, parent_all, no_constraint, initial_lamb, class_loss, \
 #     adam_values in itertools.product(inner_distance_opts,
