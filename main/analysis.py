@@ -173,6 +173,7 @@ scoring_dict["depth_tune"] =  assess_rf(depth_tune_rf,
 info_dict["depth_tune"] = depth_tune_rf.loss_vec_depth
 
 depth_spent = time.time() - time_start
+times = [depth_spent]
 
 # wOLS analysis --------------
 if reg_or_class == "reg":
@@ -240,7 +241,7 @@ if reg_or_class == "reg":
         info_dict[name] = info
 
     wols_spent = time.time() - time_start
-    times = [depth_spent, wols_spent]
+    times.append(wols_spent)
 
     # saving before ----------
     with open("data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+\
