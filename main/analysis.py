@@ -4,6 +4,7 @@ import sklearn.ensemble
 import sklearn
 import progressbar
 import sklearn.model_selection
+import sklearn.datasets
 import pdb
 import sys
 import copy
