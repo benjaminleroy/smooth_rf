@@ -343,6 +343,8 @@ def smooth_wrapper(random_forest,
         adam=adam_dict,
         verbose=False)
 
+    best_oob = np.min(c)
+
     if initial_lamb is not None:
         il = str(initial_lamb)
     else:
@@ -358,7 +360,7 @@ def smooth_wrapper(random_forest,
     scoring = assess_rf(adam_rf, X_test, y_test)
     info = adam_rf.lamb
 
-    return name, scoring, info
+    return name, scoring, info, best_oob
 
 num_jobs = len(list(itertools.product(inner_distance_opts,
                                      parent_all_opts,
@@ -391,8 +393,8 @@ s_all_output = Parallel(n_jobs=-1, verbose=10)(delayed(smooth_wrapper)(random_fo
 #                                        y_train,
 #                                        params))
 
-for name, scoring, info in s_all_output:
-    scoring_dict["smooth_element_based,"+name] = scoring
+for name, scoring, info, best_oob in s_all_output:
+    scoring_dict["smooth_element_based,"+name] = c(scoring, best_oob)
     info_dict["smooth_element_based,"+name] = info
 
 adam_spent = time.time() - time_start

@@ -1407,7 +1407,9 @@ def stocastic_grad_descent_ce(p_leaf, weights_leaf,
         raise TypeError("lamb_init needs to be the same length as the "+\
                         "number of columns in Gamma and eta")
     try:
-        if constrained and (np.sum(lamb_init)!=1 or np.any(lamb_init < 0)):
+        if constrained and \
+            (np.testing.assert_approx_equal(np.sum(lamb_init),1) or \
+            np.any(lamb_init < 0)):
             raise TypeError("For simplicity please initialize lamb_init with "+\
                             "a feasible value \n(ex: np.ones(Gamma.shape[1])/"+\
                             "Gamma.shape[1] )")
