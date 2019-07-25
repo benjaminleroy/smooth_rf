@@ -21,6 +21,8 @@ data_set = sys.argv[1]
 reg_or_class = sys.argv[2]
 n_trees = np.int(sys.argv[3])
 
+print(data_set)
+
 def pull_data(data_set, path, reg_or_class="reg"):
     if data_set == "microsoft":
         n_data = 650*2
