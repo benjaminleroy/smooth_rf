@@ -396,7 +396,7 @@ s_all_output = Parallel(n_jobs=-1, verbose=10)(delayed(smooth_wrapper)(random_fo
 #                                        params))
 
 for name, scoring, info, best_oob in s_all_output:
-    scoring_dict["smooth_element_based,"+name] = c(scoring, best_oob)
+    scoring_dict["smooth_element_based,"+name] = [scoring, best_oob]
     info_dict["smooth_element_based,"+name] = info
 
 adam_spent = time.time() - time_start
