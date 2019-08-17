@@ -868,6 +868,12 @@ def smooth_pytorch(random_forest, X_trained, y_trained,
     x_dicts : list of strings
         which dictionaries should be appended based on centering of nodes
         (same options as "which_dicts")
+    init : scalar / string
+        telling type of initialization for linear models. If "r" then
+        all coefficients are randomly initialized under standard pytorch
+        protocols. Else, it's expected to be a positive scalar which is
+        the weight of the bias terms to make the lambdas very similar to
+        the standard random forest weights (see details). Default is 5.
     verbose : bool
         logic to show pytorch data creation process and iteration of steps of
         Adam SGD (note that iteraions will be requested number // number trees)
