@@ -242,8 +242,11 @@ def create_decision_per_leafs(tree):
 
 
 def create_distance_mat_leaves(tree = None,
-                               decision_mat_leaves = None,
-                               style = ["standard", "max", "min"]):
+                               decision_mat_leaves=None,
+                               change_in_impurity_vec=None,
+                               style=["standard", "max", "min"],
+                               distance_style=["depth", "impurity"],
+                               levels=None):
     """
     create inner-tree based distance matrix for leaves from a tree or
     precomputed decision matrix for the leaves. The inner-tree distance is
@@ -256,11 +259,26 @@ def create_distance_mat_leaves(tree = None,
     decision_mat_leaves : array (n_leaves, n_nodes)
         decision_matrix relative to leaves of a tree (columns have all nodes,
         whereas rows are just relative to the leaves)
+    change_in_impurity_vec : array (n_nodes)
+        array containing change impurity for all nodes in the tree compare
+        to their parents (see change_in_impurity function)
     style : string
         style of inner-tree distance to use, see *details* for more
+    distance_style : string
+        distance style (use depth or difference in impurity)
+    levels : int
+        if distance_style = "impurity", this decides the number of discrete
+        levels of differences in impurity we will look at. 1 Level is "0", to
+        include the standard random forest structure. If None, will return
+        true difference in impurity - not levels. **NOTE: this is defined
+        relative to quantiles, so the actual number of levels could be much
+        lower.**
 
     Details:
     --------
+    Written relative to `distance_style = "depth"` - similar when using other
+    distances.
+
     For the different styles of inner-tree distance, there is currently 3
     options: "standard", "max", and "min".
 
@@ -287,29 +305,73 @@ def create_distance_mat_leaves(tree = None,
 
     """
 
+    if (type(distance_style) is list) and (len(distance_style) > 1):
+        distance_style = distance_style[0]
 
-    if tree is None and decision_mat_leaves is None:
-        return
+    if distance_style not in ["depth", "impurity"]:
+        ValueError("distance_style parameter needs to be 1 of the 2 choices.")
+
+    if distance_style == "impurity":
+        if tree is None and \
+            (decision_mat_leaves is None or change_in_impurity_vec is None):
+            ValueError("you must either provide a tree or a (decision_mat_leaves, change_in_impurity_vec) pair for impurity distance")
+    else:
+        if tree is None and decision_mat_leaves is None:
+            ValueError("you must either provide a tree or a decision_mat_leaves for depth distance")
+
+
     if decision_mat_leaves is None:
         decision_mat_leaves, _ = create_decision_per_leafs(tree)
+
 
     if (type(style) is list) and (len(style) > 1):
         style = style[0]
 
-    Q = decision_mat_leaves @ decision_mat_leaves.T
 
-    if type(Q) is scipy.sparse.coo.coo_matrix or \
-        type(Q) is scipy.sparse.csr.csr_matrix:
-        d = np.diagonal(Q.todense())
+    if levels is not None:
+        if type(levels) is not int:
+            ValueError("levels parameter needs to be an integer or None.")
+
+
+    if distance_style == "depth":
+        Q = decision_mat_leaves @ decision_mat_leaves.T
+
+        if type(Q) is scipy.sparse.coo.coo_matrix or \
+            type(Q) is scipy.sparse.csr.csr_matrix:
+            d = np.diagonal(Q.todense())
+        else:
+            d = np.diagonal(Q)
+
+        standard_distance = (d - Q.T).T
+    elif distance_style == "impurity":
+
+        if change_in_impurity_vec is None:
+            impurity_diff = change_in_impurity(tree)
+        else:
+            impurity_diff = change_in_impurity_vec
+
+        Q = decision_mat_leaves @ \
+            scipy.sparse.diags(impurity_diff) @ decision_mat_leaves.T
+
+        if type(Q) is scipy.sparse.coo.coo_matrix or \
+            type(Q) is scipy.sparse.csr.csr_matrix:
+            d = np.diagonal(Q.todense())
+        else:
+            d = np.diagonal(Q)
+
+        standard_distance = -(d - Q.T).T
     else:
-        d = np.diagonal(Q)
-
-    standard_distance = (d - Q.T).T
+        ValueError("distance_style parameter needs to be 1 of the 2 choices.")
 
     if style == "standard":
-        return standard_distance
+        out = standard_distance
     elif style == "max":
+        if type(standard_distance) is scipy.sparse.coo.coo_matrix or \
+            type(standard_distance) is scipy.sparse.csr.csr_matrix:
+            standard_distance = standard_distance.todense()
+
         standard_d_T = standard_distance.T
+
         both = np.append(np.array(standard_distance).reshape(
                                         (standard_distance.shape[0],
                                          standard_distance.shape[1],
@@ -318,8 +380,12 @@ def create_distance_mat_leaves(tree = None,
                                         (standard_d_T.shape[0],
                                          standard_d_T.shape[1],
                                          1)), axis = 2)
-        return np.max(both, axis = 2)
+        out = np.max(both, axis = 2)
     elif style == "min":
+        if type(standard_distance) is scipy.sparse.coo.coo_matrix or \
+            type(standard_distance) is scipy.sparse.csr.csr_matrix:
+            standard_distance = standard_distance.todense()
+
         standard_d_T = standard_distance.T
         both = np.append(np.array(standard_distance).reshape(
                                         (standard_distance.shape[0],
@@ -329,10 +395,43 @@ def create_distance_mat_leaves(tree = None,
                                         (standard_d_T.shape[0],
                                          standard_d_T.shape[1],
                                          1)), axis = 2)
-        return np.min(both, axis = 2)
+        out = np.min(both, axis = 2)
     else:
         ValueError("style parameter needs to be 1 of the 3 choices.")
 
+
+
+    if distance_style != "impurity" or levels is None:
+        return out
+    else:
+        # need to discretize
+        if type(out) is scipy.sparse.coo.coo_matrix or \
+            type(out) is scipy.sparse.csr.csr_matrix:
+            out = out.todense()
+
+        breaks = np.quantile(out, q = np.arange(levels + 2)/\
+                    (levels + 1))
+
+        upper_zero = np.min([np.min(out[out > 0]), 2])/2
+
+        breaks = np.array(sorted(list(set(breaks).union({0}))))
+        breaks[breaks.shape[0]-1] = np.inf
+        breaks[0] = - np.inf
+
+        if np.sum(breaks == 0) == 0: # dealing with 0 being replaced with -inf
+            which_zero = np.int(np.arange(breaks.shape[0])[breaks == -np.inf])
+        else:
+            which_zero = np.int(np.arange(breaks.shape[0])[breaks == 0])
+
+        breaks = np.array(list(breaks[:(which_zero+1)]) +\
+                          [upper_zero] + list(breaks[(which_zero + 1):]))
+
+        actual_levels = breaks.shape[0] - 1
+
+        out2 = np.array(pd.cut(np.array(out).ravel(),
+                               bins=breaks, labels=False)).reshape(out.shape)
+
+        return out2
 
 def create_Gamma_eta_tree(tree,
                       dist_mat_leaves=None,
@@ -2100,3 +2199,41 @@ def create_Gamma_eta_forest_more(forest, verbose=False, parents_all=False,
         depth_full, impurity_full
 
 
+def change_in_impurity(tree):
+    """
+    calculates the change in impurity per node and is immediate parent in a
+    binary tree
+
+    Arguments:
+    ----------
+    tree :
+        tree object with the same structure as
+        `sklearn.ensemble.DecisionTreeClassifier`
+
+    Returns:
+    --------
+    impurity_diff : float array
+        vector of change in impurity for each node. Node 0 (root node) contains
+        actual impurity value
+
+    Notes:
+    ------
+    In a CART tree, you'll find that impurity isn't a monotonically decreasing
+    value as you go down the tree
+    """
+    impurity = tree.tree_.impurity
+
+    c_left  = tree.tree_.children_left
+    c_right = tree.tree_.children_right
+    T = len(c_left)
+
+    impurity_diff = np.zeros(T)
+
+    for split in np.arange(T, dtype = np.int):
+        impurity_diff[split] += impurity[split]
+        if c_left[split] != -1:
+            impurity_diff[c_left[split]] -= impurity[split]
+        if c_right[split] != -1:
+            impurity_diff[c_right[split]] -= impurity[split]
+
+    return impurity_diff

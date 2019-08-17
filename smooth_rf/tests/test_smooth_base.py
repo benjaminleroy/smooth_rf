@@ -178,7 +178,7 @@ def test_create_decision_per_leafs():
 
 def test_create_distance_mat_leaves():
     """
-    test for test_create_distance_mat_leaves
+    test for test_create_distance_mat_leaves (depth based)
 
     Both static and random tests (random tests are more relative to structure
     than exact answers)
@@ -284,6 +284,134 @@ def test_create_distance_mat_leaves():
 
         assert np.all(d1 == d1_should[d_idx]), \
             "static test failed to reproduce correct solutions"
+
+
+def test_create_distance_mat_leaves_impurity():
+    """
+    test for test_create_distance_mat_leaves for impurity
+
+    Both static and random tests (random tests are more relative to structure
+    than exact answers)
+
+    Note this test examines the "standard" distance, and "min" and "max"
+    distances
+    """
+    # data creation
+    n = 200
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1, high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    rf_class = sklearn.ensemble.RandomForestRegressor(n_estimators = 2,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    tree = random_forest.estimators_[0]
+
+    v_leaf, v_all = smooth_rf.create_decision_per_leafs(tree)
+    impurity_diff = smooth_rf.change_in_impurity(tree)
+
+    for levels in np.random.choice(np.arange(3,20), size = 5, replace = False):
+        for style in ["standard","min","max"]:
+            d1 = smooth_rf.create_distance_mat_leaves(tree,
+                    style=style,
+                    distance_style="impurity",
+                    levels = levels)
+            d2 = smooth_rf.create_distance_mat_leaves(
+                    decision_mat_leaves=v_leaf,
+                    change_in_impurity_vec=impurity_diff,
+                    style=style,
+                    distance_style="impurity",
+                    levels=levels)
+
+            assert d2.shape == d1.shape, \
+                "distance matrix shape differences from creation with same structure"
+
+            assert d1.shape[0] == np.sum(tree.tree_.children_left == -1) and \
+                d1.shape[0] == d1.shape[1], \
+                "distance matrix correct shape relave to number of leaves"
+
+            assert np.all(d1 == d2), \
+                "distance matrix differs from creation with same structure..."
+
+    # static check
+
+    # tree structure:
+    # ~upper: left, lower: right~ | impurity
+    #    |--1                     | .2
+    # -0-|                        | .7
+    #    |   |--3                 | .2
+    #    |-2-|                    | .3
+    #        |   |--5             | 0
+    #        |-4-|                | .1
+    #            |--6             | 0
+
+    d1_should = list()
+
+    # distance (standard)
+    # (1)  0 | .5 | .5 | .5
+    # (3) .5 |  0 | .1 | .1
+    # (5) .7 | .3 |  0 | .1
+    # (6) .7 | .3 | .1 |  0
+
+    d1_should.append(np.array([[0 ,.5,.5,.5],
+                               [.5,0 ,.1,.1],
+                               [.7,.3,0 ,.1],
+                               [.7,.3,.1,0 ]]))
+    # distance (max)
+    # (1)  0 | .5 | .7 | .7
+    # (3) .5 |  0 | .3 | .3
+    # (5) .7 | .3 |  0 | .1
+    # (6) .7 | .3 | .1 |  0
+
+    d1_should.append(np.array([[0 ,.5,.7,.7],
+                               [.5,0 ,.3,.3],
+                               [.7,.3,0 ,.1],
+                               [.7,.3,.1,0 ]]))
+    # distance (min)
+    # (1)  0 | .5 | .5 | .5
+    # (3) .5 |  0 | .1 | .1
+    # (5) .5 | .1 |  0 | .1
+    # (6) .5 | .1 | .1 |  0
+
+    d1_should.append(np.array([[0 ,.5,.5,.5],
+                               [.5,0 ,.1,.1],
+                               [.5,.1,0 ,.1],
+                               [.5,.1,.1,0 ]]))
+
+    # creating desired structure
+    class inner_fake_tree():
+        def __init__(self, cl, cr, impurity):
+            self.children_left = cl
+            self.children_right = cr
+            self.impurity = impurity
+
+    class fake_tree():
+        def __init__(self, cl, cr, impurity):
+            self.tree_ = inner_fake_tree(cl, cr, impurity)
+            self.__class__ = sklearn.tree.tree.DecisionTreeRegressor
+
+    children_left = np.array([2,-1,4,-1,6,-1,-1], dtype = np.int)
+    children_right = np.array([1,-1,3,-1,5,-1,-1], dtype = np.int)
+
+    impurity = np.array([.7, .2, .3, .2, .1, 0, 0])
+
+    test = fake_tree(children_left,children_right,impurity)
+
+    for d_idx, style in enumerate(["standard","max","min"]):
+        d1 = smooth_rf.create_distance_mat_leaves(test,
+                                        style = style,
+                                        distance_style = "impurity",
+                                        levels = None)
+        if type(d1) is scipy.sparse.coo.coo_matrix or \
+            type(d1) is scipy.sparse.csr.csr_matrix:
+            d1 = d1.todense()
+        assert np.allclose(d1,d1_should[d_idx]), \
+            "static test failed to reproduce correct solutions "+\
+            "(when levels = None)"
 
 def test_create_Gamma_eta_tree_regression():
     """
@@ -1394,4 +1522,52 @@ def test_ce_s_grad_for_adam_wrapper():
 
         assert np.all(g_straight == g_wrapper), \
             "ce wrapper function should return same values at object it wraps"
+
+
+def test_change_in_impurity():
+    """
+    test for change_in_impurity function
+    """
+    for i in range(5):
+        n = 200
+        min_size_leaf = 1
+
+        X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+        y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+            10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+        y_cat = np.array(
+                         pd.cut(y, bins = 5, labels = np.arange(5, dtype = np.int)),
+                         dtype = np.int)
+
+        y = y_cat
+
+        num_classes = len(Counter(y_cat).keys())
+
+        rf_class = sklearn.ensemble.RandomForestClassifier(n_estimators = 2,
+                                                min_samples_leaf = min_size_leaf)
+        random_forest = rf_class.fit(X = X,
+                                     y = y.ravel())
+
+        tree = random_forest.estimators_[0]
+
+        c_left  = tree.tree_.children_left
+        c_right = tree.tree_.children_right
+
+        impurity_diff = smooth_rf.change_in_impurity(tree)
+
+        n_nodes = c_right.shape[0]
+
+        impurity = np.zeros(n_nodes)
+
+        for split in np.arange(n_nodes, dtype = np.int):
+            impurity[split] += impurity_diff[split]
+            if c_left[split] != -1:
+                impurity[c_left[split]] += impurity[split]
+            if c_right[split] != -1:
+                impurity[c_right[split]] += impurity[split]
+
+        assert np.all(impurity == tree.tree_.impurity), \
+            "impurity differences cannot re-create impurity vector"
+
 
