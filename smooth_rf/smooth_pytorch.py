@@ -128,7 +128,7 @@ def pytorch_numpy_prep(random_forest, X_trained, y_trained,
     elif type(random_forest) is sklearn.ensemble.RandomForestRegressor:
         rf_type = "reg"
     else:
-        ValueError("random_forest needs to be either a " +\
+        raise ValueError("random_forest needs to be either a " +\
                    "sklearn.ensemble.RandomForestClassifier " +\
                    "or a sklearn.ensemble.RandomForestRegressor")
 
@@ -309,15 +309,15 @@ def node_spatial_structure_update(random_forest, X_trained,
 
     if one_d_dict is None:
         if two_d_dict is None:
-            ValueError("either 'one_d_dict' or 'two_d_dict' must not be "+\
+            raise ValueError("either 'one_d_dict' or 'two_d_dict' must not be "+\
                        "None")
         else:
             if type(two_d_dict) is not dict:
-                ValueError("'two_d_dict' must be either None or a dictionary")
+                raise ValueError("'two_d_dict' must be either None or a dictionary")
 
     if two_d_dict is None:
         if type(one_d_dict) is not dict:
-                ValueError("'one_d_dict' must be either None or a dictionary")
+                raise ValueError("'one_d_dict' must be either None or a dictionary")
 
 
     n_col = X_trained.shape[1]
@@ -567,7 +567,7 @@ class SoftmaxTreeFit(torch.nn.Module):
         if type(init) is list:
             init = init[0]
         if init != "r" and init <= 0:
-            ValueError("init must either be 'r' or a positive scalar")
+            raise ValueError("init must either be 'r' or a positive scalar")
 
         super(SoftmaxTreeFit, self).__init__()
 
@@ -767,7 +767,7 @@ def update_rf(random_forest, pytorch_model,
     elif type(random_forest) is sklearn.ensemble.RandomForestRegressor:
         rf_type = "reg"
     else:
-        ValueError("random_forest needs to be either a " +\
+        raise ValueError("random_forest needs to be either a " +\
                    "sklearn.ensemble.RandomForestClassifier " +\
                    "or a sklearn.ensemble.RandomForestRegressor")
 

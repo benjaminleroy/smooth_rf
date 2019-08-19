@@ -103,7 +103,7 @@ def depth_tune(random_forest, X_trained=None, y_trained=None,
     elif type(random_forest) is sklearn.ensemble.RandomForestRegressor:
         rf_type = "reg"
     else:
-        ValueError("random_forest needs to be either a " +\
+        raise ValueError("random_forest needs to be either a " +\
                    "sklearn.ensemble.RandomForestClassifier " +\
                    "or a sklearn.ensemble.RandomForestRegressor")
 

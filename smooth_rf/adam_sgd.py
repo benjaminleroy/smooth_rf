@@ -46,7 +46,7 @@ def adam_step(grad_fun, lamb_init = None,
     iv = internal_values
 
     if iv is None and lamb_init is None:
-        NameError("lamb_init and internal_values can't both be None")
+        raise NameError("lamb_init and internal_values can't both be None")
 
     if iv is None:
         iv = dict()
