@@ -241,7 +241,7 @@ def create_decision_per_leafs(tree):
     return v_leaf, v_all
 
 
-def create_distance_mat_leaves(tree = None,
+def create_distance_mat_leaves(tree=None,
                                decision_mat_leaves=None,
                                change_in_impurity_vec=None,
                                style=["standard", "max", "min"],
@@ -266,13 +266,21 @@ def create_distance_mat_leaves(tree = None,
         style of inner-tree distance to use, see *details* for more
     distance_style : string
         distance style (use depth or difference in impurity)
-    levels : int
+    levels : int, or array
         if distance_style = "impurity", this decides the number of discrete
-        levels of differences in impurity we will look at. 1 Level is "0", to
-        include the standard random forest structure. If None, will return
-        true difference in impurity - not levels. **NOTE: this is defined
-        relative to quantiles, so the actual number of levels could be much
-        lower.**
+        levels of differences in impurity we will look at.
+
+        If the value is an integer, we create a set of discrete levels of
+        impurity using quantiles. 1 Level is only for "0", to
+        include the standard random forest structure. **NOTE: as this is
+        defined relative to quantiles, so the actual number of levels could be
+        much lower.**
+
+        if the value is an np array (vector) then we'll use these levels
+        *AND* add a level for just zero (so don't include this!) - it's ok
+        to have 0 as one of your splits.
+
+        If None, will return true difference in impurity - not levels.
 
     Details:
     --------
@@ -330,7 +338,8 @@ def create_distance_mat_leaves(tree = None,
 
     if levels is not None:
         if type(levels) is not int:
-            ValueError("levels parameter needs to be an integer or None.")
+            if type(levels) is not np.ndarray:
+                ValueError("levels parameter needs to be an integer, np.ndarray or None.")
 
 
     if distance_style == "depth":
@@ -403,7 +412,7 @@ def create_distance_mat_leaves(tree = None,
 
     if distance_style != "impurity" or levels is None:
         return out
-    else:
+    elif type(levels) is int or levels.shape == ():
         # need to discretize
         if type(out) is scipy.sparse.coo.coo_matrix or \
             type(out) is scipy.sparse.csr.csr_matrix:
@@ -411,32 +420,35 @@ def create_distance_mat_leaves(tree = None,
 
         breaks = np.quantile(out, q = np.arange(levels + 2)/\
                     (levels + 1))
+    else:
+        breaks = levels
 
-        upper_zero = np.min([np.min(out[out > 0]), 2])/2
+    upper_zero = np.min([np.min(out[out > 0]), 2])/2
 
-        breaks = np.array(sorted(list(set(breaks).union({0}))))
-        breaks[breaks.shape[0]-1] = np.inf
-        breaks[0] = - np.inf
+    breaks = np.array(breaks, dtype = np.float)
+    breaks = np.array(sorted(list(set(breaks).union({0}))))
+    breaks[breaks.shape[0]-1] = np.inf
+    breaks[0] = - np.inf
 
-        if np.sum(breaks == 0) == 0: # dealing with 0 being replaced with -inf
-            which_zero = np.int(np.arange(breaks.shape[0])[breaks == -np.inf])
-        else:
-            which_zero = np.int(np.arange(breaks.shape[0])[breaks == 0])
+    if np.sum(breaks == 0) == 0: # dealing with 0 being replaced with -inf
+        which_zero = np.int(np.arange(breaks.shape[0])[breaks == -np.inf])
+    else:
+        which_zero = np.int(np.arange(breaks.shape[0])[breaks == 0])
 
-        breaks = np.array(list(breaks[:(which_zero+1)]) +\
-                          [upper_zero] + list(breaks[(which_zero + 1):]))
+    breaks = np.array(list(breaks[:(which_zero+1)]) +\
+                      [upper_zero] + list(breaks[(which_zero + 1):]))
 
-        actual_levels = breaks.shape[0] - 1
+    out2 = np.array(pd.cut(np.array(out).ravel(),
+                           bins=breaks, labels=False)).reshape(out.shape)
 
-        out2 = np.array(pd.cut(np.array(out).ravel(),
-                               bins=breaks, labels=False)).reshape(out.shape)
-
-        return out2
+    return out2
 
 def create_Gamma_eta_tree(tree,
                       dist_mat_leaves=None,
                       parents_all=False,
-                      dist_mat_style=["standard", "max", "min"]):
+                      dist_mat_style=["standard", "max", "min"],
+                      distance_style=["depth", "impurity"],
+                      levels=None):
     """
     creates the Gamma and eta matrices for a single tree, where these two
     matrices are defined:
@@ -464,6 +476,12 @@ def create_Gamma_eta_tree(tree,
     dist_mat_style : string
         style of inner-tree distance to use, see *details* in the
         create_distance_mat_leaves doc-string.
+    distance_style : string
+        distance style (use depth or difference in impurity)
+    levels : int or array
+        if distance_style = "impurity", this decides the number discrete
+        quantiles to look at (besides the value = 0 group). See
+        create_distance_mat_leaves doc-string for more details.
 
     Returns:
     --------
@@ -502,8 +520,22 @@ def create_Gamma_eta_tree(tree,
     ##############################
 
     if dist_mat_leaves is None:
+        if (type(distance_style) is list) and (len(distance_style) > 1):
+            distance_style = distance_style[0]
+
+        if distance_style not in ["depth", "impurity"]:
+            ValueError("distance_style parameter needs to be 1 of the 2 "+\
+                       "choices if no dist_mat_leaves is passed in")
+
+        if distance_style == "impurity" and (type(levels) is not int or\
+                                             type(levels) is not np.ndarray):
+            ValueError("if distance_style is impurity, levels must in integer or array")
+
+
         dist_mat_leaves = create_distance_mat_leaves(tree,
-                                                     style = dist_mat_style)
+                                                style=dist_mat_style,
+                                                distance_style=distance_style,
+                                                levels=levels)
 
     # creating a 3d sparse array
     xx_all = np.zeros(shape = (0,))
@@ -1712,7 +1744,7 @@ def center_forest(forest, X):
 
     return mean_all, t_idx_all
 
-#### pytorch prep
+#### pytorch prep ---------------------------------------------
 
 
 def create_Gamma_eta_tree_more(tree,
@@ -2237,3 +2269,54 @@ def change_in_impurity(tree):
             impurity_diff[c_right[split]] -= impurity[split]
 
     return impurity_diff
+
+def quantiles_distance_trees(forest,
+                             style=["standard", "max", "min"],
+                             distance_style=["depth", "impurity"],
+                             levels=None):
+    """
+    understand the distribution of distance within multiple trees. Generally
+    assumed that you will be obtaining just the quantiles of this distribution
+
+    Arguments:
+    ----------
+    forest : sklearn forest (sklearn.ensemble.forest.RandomForestRegressor or
+             sklearn.ensemble.forest.RandomForestClassifier)
+        grown forest (would recommend potentially a random subset)
+    style : string
+        style of inner-tree distance to use, see *details* for more
+    distance_style : string
+        distance style (use depth or difference in impurity)
+    levels : int
+        if the value is an integer, we calculate quantiles that create
+        `levels` number of bins (note that some of these levels could be the
+        same value)
+
+        If None, will return true distance values - not levels.
+
+    Returns:
+    --------
+    depending on `levels` input, either a set of breaks to define `levels`
+    number of bins (relative to quantiles of the distance) or all distance
+    values for the leafs
+
+    Notes:
+    ------
+    this treats all the leaves of each tree having the same weight (not
+    weighted relative to the number of observations per leaf)
+    """
+    all_values = np.zeros(0)
+
+    for tree in forest:
+        tree_values = create_distance_mat_leaves(tree,
+                                                 style=style,
+                                                 distance_style=distance_style,
+                                                 levels=None) # not discretized
+
+        all_values = np.append(all_values, tree_values.ravel())
+
+    if levels is None:
+        return all_values
+    else:
+        return np.quantile(all_values, q = np.arange(levels + 1)/(levels) )
+

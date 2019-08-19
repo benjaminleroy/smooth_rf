@@ -522,6 +522,148 @@ def test_create_Gamma_eta_tree_regression():
     assert np.all(n_static == n_expected), \
         "static test's eta failed to reproduce correct solutions"
 
+def test_create_Gamma_eta_tree_regression_impurity():
+    """
+    test for create_Gamma_eta_tree, regression tree - standard, impurity only
+
+    Both static and random tests (random tests are more relative to structure
+    than exact answers)
+    """
+
+
+    # random - structure output check
+    # data creation
+    n = 200
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    rf_class = sklearn.ensemble.RandomForestRegressor(n_estimators = 2,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    tree = random_forest.estimators_[0]
+
+    max_depth_range = np.max(smooth_rf.depth_per_node(tree)) + 1
+
+    G, n = smooth_rf.create_Gamma_eta_tree(tree)
+
+    assert G.shape == (np.sum(tree.tree_.children_left == -1),
+                       max_depth_range), \
+        "Gamma returned does not have the correct shape"
+
+    assert n.shape ==  G.shape, \
+        "eta returned does not have the correct shape"
+
+    assert np.all(n >= 0), \
+        "eta returned has negative values"
+
+    assert np.all(n[:,0] ==
+        tree.tree_.weighted_n_node_samples[tree.tree_.children_left == -1]),\
+        "eta structure doesn't match up with number of observes per leaf"
+
+    # static check
+
+    # tree structure:
+    # ~upper: left, lower: right~
+    #                       num obs
+    #    |--1                   10
+    # -0-|                       34
+    #    |   |--3              9
+    #    |-2-|                  24
+    #        |   |--5         8
+    #        |-4-|             15
+    #            |--6         7
+
+
+    # eta
+    # (1) 10 | 24 | 0  | 0
+    # (3) 9  | 15 | 10 | 0
+    # (5) 8  | 7  | 9  | 10
+    # (6) 7  | 8  | 9  | 10
+
+    # Gamma
+    # (1) 10         | 18+24+28 = 70 | 0  | 0
+    # (3) 9 * 2 = 18 | 24+28 = 52    | 10 | 0
+    # (5) 8 * 3 = 24 | 28            | 18 | 10
+    # (6) 7 * 4 = 28 | 24            | 18 | 10
+
+
+    class inner_fake_tree():
+        def __init__(self, nn, cl, cr, v, impurity):
+            self.weighted_n_node_samples = nn
+            self.children_left = cl
+            self.children_right = cr
+            self.value = v
+            self.impurity = impurity
+
+    class fake_tree():
+        def __init__(self, nn, cl, cr, v, impurity):
+            self.tree_ = inner_fake_tree(nn, cl, cr, v, impurity)
+            self.__class__ = sklearn.tree.tree.DecisionTreeRegressor
+
+    weighted_n_node_samples = np.array([34,10,24,9,15,8,7], dtype = np.int)
+    children_left = np.array([2,-1,4,-1,6,-1,-1], dtype = np.int)
+    children_right = np.array([1,-1,3,-1,5,-1,-1], dtype = np.int)
+    value = np.array([-99, 1, -99, 2, -99, 3, 4]).reshape((-1,1,1))
+    impurity = np.array([4, 3, 3, 2,2,1,1])
+
+
+    test = fake_tree(weighted_n_node_samples,
+                     children_left,
+                     children_right,
+                     value,
+                     impurity)
+
+    n_leaf = 4
+
+    # inner calulation of levels
+
+    g_static, n_static = smooth_rf.create_Gamma_eta_tree(test,
+                                            distance_style = "impurity",
+                                            levels = 5)
+    # ^ levels =5 gives us 4 levels in the end (which is desirable)
+    n_expected = np.array([[10,24,0,0],
+                           [9,15,10,0],
+                           [8,7,9,10],
+                           [7,8,9,10]])
+    g_expected = np.array([[10,70,0,0],
+                           [18,52,10,0],
+                           [24,28,18,10],
+                           [28,24,18,10]])
+    assert np.all(g_static == g_expected), \
+        "static test's Gamma failed to reproduce correct solutions "+\
+        "(levels internally created)"
+    assert np.all(n_static == n_expected), \
+        "static test's eta failed to reproduce correct solutions "+\
+        "(levels internally created)"
+
+
+    # external calulation of levels
+    levels = np.array([0,1,2,3,4])
+
+    g_static, n_static = smooth_rf.create_Gamma_eta_tree(test,
+                                            distance_style = "impurity",
+                                            levels = levels)
+    # ^ levels =5 gives us 4 levels in the end (which is desirable)
+    n_expected = np.array([[10,24,0,0],
+                           [9,15,10,0],
+                           [8,7,9,10],
+                           [7,8,9,10]])
+    g_expected = np.array([[10,70,0,0],
+                           [18,52,10,0],
+                           [24,28,18,10],
+                           [28,24,18,10]])
+    assert np.all(g_static == g_expected), \
+        "static test's Gamma failed to reproduce correct solutions "+\
+        "(levels externally provided)"
+    assert np.all(n_static == n_expected), \
+        "static test's eta failed to reproduce correct solutions "+\
+        "(levels externally provided)"
+
 def test_create_Gamma_eta_tree_classification():
     """
     test for create_Gamma_eta_tree, classification tree - standard depth only
@@ -655,6 +797,152 @@ def test_create_Gamma_eta_tree_classification():
         "static test's Gamma failed to reproduce correct solutions"
     assert np.all(n_static == n_expected), \
         "static test's eta failed to reproduce correct solutions"
+
+
+def test_create_Gamma_eta_tree_classification_impurity():
+    """
+    test for create_Gamma_eta_tree, classification tree -standard,impurity only
+
+    Both static and random tests (random tests are more relative to structure
+    than exact answers)
+    """
+
+
+    # random - structure output check
+    # data creation
+    n = 200
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    y_cat = np.array(
+                     pd.cut(y, bins = 5, labels = np.arange(5, dtype = np.int)),
+                     dtype = np.int)
+
+    y = y_cat
+
+    num_classes = len(Counter(y_cat).keys())
+
+    rf_class = sklearn.ensemble.RandomForestClassifier(n_estimators = 2,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    tree = random_forest.estimators_[0]
+
+    max_depth_range = np.max(smooth_rf.depth_per_node(tree)) + 1
+
+    G, n = smooth_rf.create_Gamma_eta_tree(tree,
+                                           distance_style = "impurity",
+                                           levels = 10)
+
+    # given we don't actually know the number of levels in each tree
+    assert G.shape[0] == num_classes and \
+           G.shape[1] == np.sum(tree.tree_.children_left == -1) and \
+           len(G.shape) == 3, \
+        "Gamma returned does not have the correct shape"
+
+    assert n.shape ==  G.shape[1:3], \
+        "eta returned does not have the correct shape"
+
+    assert np.all(n >= 0), \
+        "eta returned has negative values"
+
+    assert np.all(n[:,0] ==
+        tree.tree_.weighted_n_node_samples[tree.tree_.children_left == -1]),\
+        "eta structure doesn't match up with number of observes per leaf"
+
+    # static check
+
+    # tree structure:
+    # ~upper: left, lower: right~
+    #                       num obs     class 1   class 2
+    #    |--1                   10          5       5
+    # -0-|                       34         21      13
+    #    |   |--3              9            9       0
+    #    |-2-|                  24          16      8
+    #        |   |--5         8             7       1
+    #        |-4-|             15           7       8
+    #            |--6         7             0       7
+
+
+    # eta
+    # (1) 10 | 24 | 0  | 0
+    # (3) 9  | 15 | 10 | 0
+    # (5) 8  | 7  | 9  | 10
+    # (6) 7  | 8  | 9  | 10
+
+
+    # Gamma (class 1)
+    # (1) 5 | 9+7 = 16| 0 | 0
+    # (3) 9 | 7       | 5 | 0
+    # (5) 7 | 0       | 9 | 5
+    # (6) 0 | 7       | 9 | 5
+
+    # Gamma (class 2)
+    # (1) 5 | 1+7 = 8| 0 | 0
+    # (3) 0 | 8      | 5 | 0
+    # (5) 1 | 7      | 0 | 5
+    # (6) 7 | 1      | 0 | 5
+
+    class inner_fake_tree():
+        def __init__(self, nn, cl, cr, v, impurity):
+            self.weighted_n_node_samples = nn
+            self.children_left = cl
+            self.children_right = cr
+            self.value = v
+            self.impurity = impurity
+
+    class fake_tree():
+        def __init__(self, nn, cl, cr, v, impurity):
+            self.tree_ = inner_fake_tree(nn, cl, cr, v, impurity)
+            self.__class__ = sklearn.tree.tree.DecisionTreeClassifier
+
+    weighted_n_node_samples = np.array([34,10,24,9,15,8,7], dtype = np.int)
+    children_left = np.array([2,-1,4,-1,6,-1,-1], dtype = np.int)
+    children_right = np.array([1,-1,3,-1,5,-1,-1], dtype = np.int)
+    value = np.array([[21, 13],
+                      [5, 5],
+                      [16, 8],
+                      [9, 0],
+                      [7, 8],
+                      [7, 1],
+                      [0, 7]], dtype = np.float).reshape((-1,1,2))
+    impurity = np.array([4,3,3,2,2,1,1])
+
+
+
+    test = fake_tree(weighted_n_node_samples,
+                     children_left,
+                     children_right,
+                     value,
+                     impurity)
+
+    n_leaf = 4
+
+    g_static, n_static = smooth_rf.create_Gamma_eta_tree(test,
+                                                distance_style = "impurity",
+                                                levels = 4)
+
+    n_expected = np.array([[10,24,0,0],
+                           [9,15,10,0],
+                           [8,7,9,10],
+                           [7,8,9,10]])
+    g_expected = np.array([[[5,16,0,0],
+                            [9,7,5,0],
+                            [7,0,9,5],
+                            [0,7,9,5]],
+                           [[5,8,0,0],
+                            [0,8,5,0],
+                            [1,7,0,5],
+                            [7,1,0,5]]])
+    assert np.all(g_static == g_expected), \
+        "static test's Gamma failed to reproduce correct solutions"
+    assert np.all(n_static == n_expected), \
+        "static test's eta failed to reproduce correct solutions"
+
 
 def test_create_Gamma_eta_forest_regression():
     """
@@ -1571,3 +1859,74 @@ def test_change_in_impurity():
             "impurity differences cannot re-create impurity vector"
 
 
+def test_quantiles_distance_trees():
+    """
+    test quantiles_distance_trees function
+    """
+
+    n = 200
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    y_cat = np.array(
+                     pd.cut(y, bins = 5, labels = np.arange(5, dtype = np.int)),
+                     dtype = np.int)
+
+    y = y_cat
+
+    num_classes = len(Counter(y_cat).keys())
+
+    rf_class = sklearn.ensemble.RandomForestClassifier(n_estimators = 5,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    forest = random_forest.estimators_
+
+    for style in ["standard", "max", "min"]:
+        values = smooth_rf.quantiles_distance_trees(forest,
+                                          style=style,
+                                          distance_style="impurity",
+                                 levels=None)
+
+        all_vals = np.zeros(0)
+        for tree in forest:
+            single_tree_values = smooth_rf.create_distance_mat_leaves(tree,
+                                                    style=style,
+                                                    distance_style="impurity",
+                                                    levels=None)
+            all_vals = np.append(all_vals, single_tree_values)
+
+        assert np.all(values == all_vals), \
+            "calculating each tree values is the same as doing it for the "+\
+            "forest"
+
+    for levels in np.random.choice(np.arange(5,15), replace=False, size = 5):
+        for style in ["standard", "max", "min"]:
+            values = smooth_rf.quantiles_distance_trees(forest,
+                                              style=style,
+                                              distance_style="impurity",
+                                              levels=levels)
+            assert values.shape[0] == levels + 1, \
+                "quantiles returned should be a vector of 1 more length "+\
+                "than levels integter"
+
+            assert np.all(values == np.array(sorted(values))), \
+                "quantiles returned should naturally be sorted"
+
+            all_vals = np.zeros(0)
+            for tree in forest:
+                single_tree_values = smooth_rf.create_distance_mat_leaves(tree,
+                                                    style=style,
+                                                    distance_style="impurity",
+                                                    levels=None)
+                all_vals = np.append(all_vals, single_tree_values)
+
+            output = np.quantile(all_vals, q = np.arange(levels + 1)/(levels) )
+
+            assert np.all(output == values), \
+                "output quantiles match correct quantiles for distances "+\
+                "from trees"
