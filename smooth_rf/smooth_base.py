@@ -439,8 +439,9 @@ def create_distance_mat_leaves(tree=None,
     else:
         which_zero = np.int(np.arange(breaks.shape[0])[breaks == 0])
 
-    breaks = np.array(list(breaks[:(which_zero+1)]) +\
-                      [upper_zero] + list(breaks[(which_zero + 1):]))
+    if upper_zero < breaks[(which_zero + 1)]: # else don't update breaks
+        breaks = np.array(list(breaks[:(which_zero+1)]) +\
+                          [upper_zero] + list(breaks[(which_zero + 1):]))
 
     out2 = np.array(pd.cut(np.array(out).ravel(),
                            bins=breaks, labels=False)).reshape(out.shape)
@@ -1050,7 +1051,9 @@ def smooth(random_forest, X_trained=None, y_trained=None,
                all_trees=False,
                initial_lamb_seed=None,
                parents_all=False,
-               distance_style=["standard","max", "min"],
+               dist_mat_style=["standard","max", "min"],
+               distance_style=["depth", "impurity"],
+               levels=None,
                class_eps=1e-4,
                class_loss=["ce","l2"],
                adam=None):
@@ -1102,6 +1105,15 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     distance_style : string
         style of inner-tree distance to use, see *details* in the
         create_distance_mat_leaves doc-string.
+    dist_mat_style : string
+        style of inner-tree distance matrix to use, see *details* in the
+        create_distance_mat_leaves doc-string.
+    distance_style : string
+        distance style (use depth or difference in impurity) see *details*
+        in the create_distance_mat_leaves doc-string.
+    levels : int, or array or None
+        levels to discretize distance into (see *details* in the
+        create_distance_mat_leaves doc-string.)
     class_eps : scalar (default 1e-4)
         For classification modles only. This scalar value makes it such that
         we keep the lamb values stay in the space defined by
@@ -1187,7 +1199,9 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     Gamma, eta, t_idx_vec = create_Gamma_eta_forest(random_forest,
                                                 verbose=verbose,
                                                 parents_all=parents_all,
-                                                dist_mat_style=distance_style)
+                                                dist_mat_style=dist_mat_style,
+                                                distance_style=distance_style,
+                                                levels=levels)
 
     first_iter = forest
     if verbose:
