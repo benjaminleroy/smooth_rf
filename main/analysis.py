@@ -1,3 +1,12 @@
+# format:
+#
+# ipython analysis.py data_set reg_or_class n_tree [d_style] [levels]
+#
+# for example:
+#
+# ipython analysis.py moon class 10 impurity 10
+
+
 import numpy as np
 import pandas as pd
 import sklearn.ensemble
@@ -21,7 +30,24 @@ data_set = sys.argv[1]
 reg_or_class = sys.argv[2]
 n_trees = np.int(sys.argv[3])
 
-print(data_set)
+try:
+    d_style = sys.argv[4]
+except:
+    d_style = "depth"
+if d_style not in ["impurity", "depth"]:
+    raise ValueError("distance style (4th parameter) should be either depth "+\
+                   "or impurity")
+
+
+try:
+    levels = np.int(sys.argv[5])
+    add_levels = "_levels:" + str(levels)
+except:
+    levels = None
+    add_levels = ""
+
+
+print("Dataset: " + data_set)
 
 def pull_data(data_set, path, reg_or_class="reg"):
     if data_set == "microsoft":
@@ -339,11 +365,13 @@ def smooth_wrapper(random_forest,
         all_trees=False,
         initial_lamb_seed=initial_lamb,
         parents_all=False,
-        distance_style=inner_distance,
+        dist_mat_style=inner_distance,
+        distance_style=d_style,
         class_eps=0.0001,
         class_loss=class_loss,
         adam=adam_dict,
-        verbose=False)
+        verbose=False,
+        levels=levels)
 
     best_oob = np.min(c)
 
@@ -352,7 +380,9 @@ def smooth_wrapper(random_forest,
     else:
         il = "rf"
 
-    name = "element_opt" +\
+
+
+    name = "element_opt" + "_dist_style:" + d_style + add_levels +\
         "_dist:" + inner_distance +\
         ",parents:" + str(parent_all) +\
         ",constraints:" + str(not no_constraint) +\
@@ -403,7 +433,13 @@ adam_spent = time.time() - time_start
 times.append(adam_spent)
 
 # saving
-with open("data/"+data_set+"_"+reg_or_class+"_"+str(n_trees)+\
+if levels is not None:
+  add_levels_file = "levels_" + str(levels)
+else:
+  add_levels_file = ""
+
+with open("data/"+data_set+"_"+d_style+"_"+add_levels_file+\
+          reg_or_class+"_"+str(n_trees)+\
             "_"+str(my_seed)+".pkl",
           "wb") as pfile:
     pickle.dump({"seed":my_seed,
