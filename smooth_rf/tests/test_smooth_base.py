@@ -6,7 +6,7 @@ import sklearn
 from sklearn.ensemble import RandomForestRegressor
 from collections import Counter
 import sys, os
-
+import nose
 import smooth_rf
 
 def test_depth_per_node():
@@ -204,8 +204,8 @@ def test_create_distance_mat_leaves():
     v_leaf, v_all = smooth_rf.create_decision_per_leafs(tree)
 
     for style in ["standard","min","max"]:
-        d1 = smooth_rf.create_distance_mat_leaves(tree, style = style)
-        d2 = smooth_rf.create_distance_mat_leaves(decision_mat_leaves = v_leaf,
+        d1, _ = smooth_rf.create_distance_mat_leaves(tree, style = style)
+        d2, _ = smooth_rf.create_distance_mat_leaves(decision_mat_leaves = v_leaf,
                                                   style = style)
 
         assert d2.shape == d1.shape, \
@@ -280,7 +280,7 @@ def test_create_distance_mat_leaves():
     test = fake_tree(children_left,children_right)
 
     for d_idx, style in enumerate(["standard","max","min"]):
-        d1 = smooth_rf.create_distance_mat_leaves(test, style = style)
+        d1, _ = smooth_rf.create_distance_mat_leaves(test, style = style)
 
         assert np.all(d1 == d1_should[d_idx]), \
             "static test failed to reproduce correct solutions"
@@ -316,11 +316,11 @@ def test_create_distance_mat_leaves_impurity():
 
     for levels in np.random.choice(np.arange(3,20), size = 5, replace = False):
         for style in ["standard","min","max"]:
-            d1 = smooth_rf.create_distance_mat_leaves(tree,
+            d1, _ = smooth_rf.create_distance_mat_leaves(tree,
                     style=style,
                     distance_style="impurity",
                     levels = levels)
-            d2 = smooth_rf.create_distance_mat_leaves(
+            d2, _ = smooth_rf.create_distance_mat_leaves(
                     decision_mat_leaves=v_leaf,
                     change_in_impurity_vec=impurity_diff,
                     style=style,
@@ -402,7 +402,7 @@ def test_create_distance_mat_leaves_impurity():
     test = fake_tree(children_left,children_right,impurity)
 
     for d_idx, style in enumerate(["standard","max","min"]):
-        d1 = smooth_rf.create_distance_mat_leaves(test,
+        d1, _ = smooth_rf.create_distance_mat_leaves(test,
                                         style = style,
                                         distance_style = "impurity",
                                         levels = None)
@@ -924,7 +924,7 @@ def test_create_Gamma_eta_tree_classification_impurity():
 
     g_static, n_static = smooth_rf.create_Gamma_eta_tree(test,
                                                 distance_style = "impurity",
-                                                levels = 4)
+                                                levels = np.array([0,1,2,3,4]))
 
     n_expected = np.array([[10,24,0,0],
                            [9,15,10,0],
@@ -942,6 +942,29 @@ def test_create_Gamma_eta_tree_classification_impurity():
         "static test's Gamma failed to reproduce correct solutions"
     assert np.all(n_static == n_expected), \
         "static test's eta failed to reproduce correct solutions"
+
+    g_static, n_static = smooth_rf.create_Gamma_eta_tree(test,
+                                                distance_style = "impurity",
+                                                levels = np.array([0,1,2,2.1,2.5,3,4]))
+
+    n_expected = np.array([[10,24, 0,  0,0,  0 ],
+                           [9 ,15,10,  0,0,  0 ],
+                           [8 ,7 , 9,  0,0,  10],
+                           [7 ,8 , 9,  0,0,  10]])
+    g_expected = np.array([[[5,16,0,  0,0,  0],
+                            [9,7 ,5,  0,0,  0],
+                            [7,0 ,9,  0,0,  5],
+                            [0,7 ,9,  0,0,  5]],
+                           [[5,8 ,0,  0,0,  0],
+                            [0,8 ,5,  0,0,  0],
+                            [1,7 ,0,  0,0,  5],
+                            [7,1 ,0,  0,0,  5]]])
+    assert np.all(g_static == g_expected), \
+        "static test's Gamma failed to reproduce correct solutions "+\
+        "(extra levels)"
+    assert np.all(n_static == n_expected), \
+        "static test's eta failed to reproduce correct solutions "+\
+        "(extra levels)"
 
 
 def test_create_Gamma_eta_forest_regression():
@@ -1075,6 +1098,141 @@ def test_create_Gamma_eta_forest_regression():
                     "(parents_all = True)" %t_idx
 
 
+def test_create_Gamma_eta_forest_regression_impurity():
+    """
+    test create_Gamma_eta_forest, regression forests - standard depth, impurity
+    only
+
+    compares to what is expected to be returned from create_Gamma_eta_tree -
+    mostly just structurally
+    """
+    # parent = F
+    n = 200
+    n_tree = 10
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    rf_class = sklearn.ensemble.RandomForestRegressor(n_estimators = n_tree,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    nose.tools.assert_raises(ValueError,
+                             smooth_rf.create_Gamma_eta_forest,
+                                random_forest,
+                                distance_style="impurity")
+
+    get_quantiles = smooth_rf.quantiles_distance_trees(
+                            forest = [random_forest.estimators_[t_idx]
+                                        for t_idx in np.arange(5)],
+                            distance_style="impurity",
+                                            levels = 5)
+
+    g, n, t = smooth_rf.create_Gamma_eta_forest(random_forest,
+                                            distance_style="impurity",
+                                            levels = get_quantiles)
+
+
+    assert g.shape == n.shape, \
+        "Gamma and eta matrices are not the correct shared size "+\
+        "(parents_all = False)"
+    assert g.shape[0] == t.shape[0], \
+        "the tree index vector doesn't have the correct number of observations "+\
+        "(parents_all = False)"
+
+    assert np.all(
+        np.array(list(dict(Counter(t)).keys())) == np.arange(n_tree)),\
+        "tree index doesn't contain expected tree index values "+\
+        "(parents_all = False)"
+
+    for t_idx, tree in enumerate(random_forest.estimators_):
+        distance_mat, expected_levels = \
+            smooth_rf.create_distance_mat_leaves(tree,
+                                     distance_style="impurity",
+                                     levels=get_quantiles)
+        actual_levels = np.int(np.max(distance_mat)) + 1
+        G_tree, n_tree = smooth_rf.create_Gamma_eta_tree(tree,
+                                            distance_style="impurity",
+                                            levels = get_quantiles)
+
+        assert G_tree.shape[0] == np.sum(t == t_idx), \
+            "shape of single Gamma from create_Gamma_eta_tree" +\
+            "does not match structure from t_idx output "+\
+            "(parents_all = False)"
+
+        assert np.all(G_tree == g[t==t_idx,:][:,:actual_levels]), \
+            "doesn't match create_Gamma_eta_tree function for Gamma "+\
+            "(parents_all = False)"
+
+        assert np.all(n_tree == n[t==t_idx,:][:,:actual_levels]), \
+            "doesn't match create_Gamma_eta_tree function for eta " +\
+            "(parents_all = False"
+
+
+    # parent = T
+    n = 200
+    n_tree = 10
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    rf_class = sklearn.ensemble.RandomForestRegressor(n_estimators = n_tree,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    g, n, t = smooth_rf.create_Gamma_eta_forest(random_forest,
+                                                parents_all=True,
+                                                distance_style="impurity",
+                                                levels = 5)
+    get_quantiles = smooth_rf.quantiles_distance_trees(
+                            forest = [random_forest.estimators_[t_idx]
+                                        for t_idx in np.arange(5)],
+                            distance_style="impurity",
+                                            levels = 5)
+    assert g.shape == n.shape, \
+        "Gamma and eta matrices are not the correct shared size "+\
+        "(parents_all = True)"
+    assert g.shape[0] == t.shape[0], \
+        "the tree index vector doesn't have the correct number of observations "+\
+        "(parents_all = True)"
+
+    assert np.all(
+        np.array(list(dict(Counter(t)).keys())) == np.arange(n_tree)),\
+        "tree index doesn't contain expected tree index values "+\
+        "(parents_all = True)"
+
+    for t_idx, tree in enumerate(random_forest.estimators_):
+        distance_mat, expected_levels = \
+            smooth_rf.create_distance_mat_leaves(tree,
+                                     distance_style="impurity",
+                                     levels=get_quantiles)
+        actual_levels = np.int(np.max(distance_mat)) + 1
+        G_tree, n_tree = smooth_rf.create_Gamma_eta_tree(tree,
+                                            distance_style="impurity",
+                                            parents_all=True,
+                                            levels = get_quantiles)
+
+        assert G_tree.shape[0] == np.sum(t == t_idx), \
+            "shape of single Gamma from create_Gamma_eta_tree" +\
+            "does not match structure from t_idx output "+\
+            "(parents_all = True)"
+
+        assert np.all(G_tree == g[t==t_idx,:][:,:actual_levels]), \
+            "doesn't match create_Gamma_eta_tree function for Gamma "+\
+            "(parents_all = True)"
+
+        assert np.all(n_tree == n[t==t_idx,:][:,:actual_levels]), \
+            "doesn't match create_Gamma_eta_tree function for eta " +\
+            "(parents_all = True)"
+
+
+
 
 def test_create_Gamma_eta_forest_classification():
     """
@@ -1147,6 +1305,177 @@ def test_create_Gamma_eta_forest_classification():
             "(parents_all = False)"
         if max_depth_range != g.shape[2]:
             assert np.all(n[t==t_idx,][:,max_depth_range:] == 0), \
+                "extra dimensions, based on the global forest having larger" +\
+                "depth than the individual tree (num %d) in eta are "+\
+                "non-zero (parents_all = False)" %t_idx
+    # parent = T
+    n = 200
+    n_tree = 10
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    y_cat = np.array(
+                     pd.cut(y, bins = 5, labels = np.arange(5, dtype = np.int)),
+                     dtype = np.int)
+
+    y = y_cat
+
+    num_classes = len(Counter(y_cat).keys())
+
+    rf_class = sklearn.ensemble.RandomForestClassifier(n_estimators = n_tree,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    g, n, t = smooth_rf.create_Gamma_eta_forest(random_forest,
+                                                parents_all=True)
+
+    assert g.shape[1:] == n.shape, \
+        "Gamma and eta matrices are not the correct shared size" +\
+            "(parents_all = True)"
+    assert g.shape[1] == t.shape[0], \
+        "the tree index vector doesn't have the correct number of observations" +\
+            "(parents_all = True)"
+    assert g.shape[0] == num_classes, \
+        "Gamma matrix dimensions don't match the number of classes correctly" +\
+            "(parents_all = True)"
+
+    assert np.all(
+        np.array(list(dict(Counter(t)).keys())) == np.arange(n_tree)),\
+        "tree index doesn't contain expected tree index values" +\
+            "(parents_all = True)"
+
+    for t_idx, tree in enumerate(random_forest.estimators_):
+        max_depth_range = np.int(np.max(smooth_rf.depth_per_node(tree)) + 1)
+        G_tree, n_tree = smooth_rf.create_Gamma_eta_tree(tree,
+                                                         parents_all=True)
+
+        assert G_tree.shape[1] == np.sum(t == t_idx), \
+            "shape of single Gamma from create_Gamma_eta_tree" +\
+            "does not match structure from t_idx output" +\
+            "(parents_all = True)"
+
+        assert np.all(G_tree == g[:,t==t_idx,:][:,:,:max_depth_range]), \
+            "doesn't match create_Gamma_eta_tree function for Gamma" +\
+            "(parents_all = True)"
+        if max_depth_range != g.shape[2]:
+            for _ in range(5):
+                idx = np.random.choice(np.int(g.shape[2] - max_depth_range))+\
+                         max_depth_range
+                assert np.all(g[:,t==t_idx,:][:,:,idx] == \
+                              g[:,t==t_idx,:][:,:,max_depth_range]), \
+                    "extra dimensions, based on the global forest having larger" +\
+                    "depth than the individual tree (num %d) in Gamma are "+\
+                    "equal to the last column of tree Gamma "+\
+                    "(parents_all = True)" %t_idx
+
+        assert np.all(n_tree == n[t==t_idx,:][:,:max_depth_range]), \
+            "doesn't match create_Gamma_eta_tree function for eta" +\
+            "(parents_all = True)"
+        if max_depth_range != g.shape[2]:
+            for _ in range(5):
+                idx = np.random.choice(np.int(g.shape[2] - max_depth_range))+\
+                         max_depth_range
+                assert np.all(n[t==t_idx,][:,idx] == \
+                              n[t==t_idx,][:,max_depth_range]), \
+                    "extra dimensions, based on the global forest having larger" +\
+                    "depth than the individual tree (num %d) in eta are "+\
+                    "equal to the last column of tree eta "+\
+                    "(parents_all = True)" %t_idx
+
+
+
+
+
+def test_create_Gamma_eta_forest_classification_impurity():
+    """
+    test create_Gamma_eta_forest, classification forests - standard, impurity
+    only
+
+    compares to what is expected to be returned from create_Gamma_eta_tree -
+    mostly just structurally
+
+
+    """
+    # parent = F
+    n = 200
+    n_tree = 10
+    min_size_leaf = 1
+
+    X = np.random.uniform(size = (n, 510), low = -1,high = 1)
+    y = 10 * np.sin(np.pi * X[:,0]*X[:,1]) + 20 * ( X[:,2] - .5)**2 +\
+        10 * X[:,3] + 5 * X[:,4] + np.random.normal(size = n)
+
+    y_cat = np.array(
+                     pd.cut(y, bins = 5, labels = np.arange(5, dtype = np.int)),
+                     dtype = np.int)
+
+    y = y_cat
+
+    num_classes = len(Counter(y_cat).keys())
+
+    rf_class = sklearn.ensemble.RandomForestClassifier(n_estimators = n_tree,
+                                            min_samples_leaf = min_size_leaf)
+    random_forest = rf_class.fit(X = X,
+                                 y = y.ravel())
+
+    get_quantiles = smooth_rf.quantiles_distance_trees(
+                            forest = [random_forest.estimators_[t_idx]
+                                        for t_idx in np.arange(5)],
+                            distance_style="impurity",
+                                            levels = 5)
+
+    g, n, t = smooth_rf.create_Gamma_eta_forest(random_forest,
+                                            distance_style="impurity",
+                                            levels = get_quantiles)
+
+    assert g.shape[1:] == n.shape, \
+        "Gamma and eta matrices are not the correct shared size" +\
+            "(parents_all = False)"
+    assert g.shape[1] == t.shape[0], \
+        "the tree index vector doesn't have the correct number of observations" +\
+            "(parents_all = False)"
+    assert g.shape[0] == num_classes, \
+        "Gamma matrix dimensions don't match the number of classes correctly" +\
+            "(parents_all = False)"
+
+    assert np.all(
+        np.array(list(dict(Counter(t)).keys())) == np.arange(n_tree)),\
+        "tree index doesn't contain expected tree index values" +\
+            "(parents_all = False)"
+
+    for t_idx, tree in enumerate(random_forest.estimators_):
+        distance_mat, expected_levels = \
+            smooth_rf.create_distance_mat_leaves(tree,
+                                     distance_style="impurity",
+                                     levels=get_quantiles)
+        actual_levels = np.int(np.max(distance_mat)) + 1
+        G_tree, n_tree = smooth_rf.create_Gamma_eta_tree(tree,
+                                            distance_style="impurity",
+                                            levels = get_quantiles)
+
+        assert G_tree.shape[1] == np.sum(t == t_idx), \
+            "shape of single Gamma from create_Gamma_eta_tree" +\
+            "does not match structure from t_idx output" +\
+            "(parents_all = False)"
+
+        assert np.all(G_tree == g[:,t==t_idx,:][:,:,:actual_levels]), \
+            "doesn't match create_Gamma_eta_tree function for Gamma" +\
+            "(parents_all = False)"
+        if actual_levels != g.shape[2]:
+            assert np.all(g[:,t==t_idx,][:,:,actual_levels:] == 0), \
+                "extra dimensions, based on the global forest having larger" +\
+                "depth than the individual tree (num %d) in Gamma are "+\
+                "non-zero (parents_all = False)"%t_idx
+
+        assert np.all(n_tree == n[t==t_idx,:][:,:actual_levels]), \
+            "doesn't match create_Gamma_eta_tree function for eta" +\
+            "(parents_all = False)"
+        if actual_levels != g.shape[2]:
+            assert np.all(n[t==t_idx,][:,actual_levels:] == 0), \
                 "extra dimensions, based on the global forest having larger" +\
                 "depth than the individual tree (num %d) in eta are "+\
                 "non-zero (parents_all = False)" %t_idx
@@ -1894,7 +2223,7 @@ def test_quantiles_distance_trees():
 
         all_vals = np.zeros(0)
         for tree in forest:
-            single_tree_values = smooth_rf.create_distance_mat_leaves(tree,
+            single_tree_values, _ = smooth_rf.create_distance_mat_leaves(tree,
                                                     style=style,
                                                     distance_style="impurity",
                                                     levels=None)
@@ -1919,7 +2248,7 @@ def test_quantiles_distance_trees():
 
             all_vals = np.zeros(0)
             for tree in forest:
-                single_tree_values = smooth_rf.create_distance_mat_leaves(tree,
+                single_tree_values, _ = smooth_rf.create_distance_mat_leaves(tree,
                                                     style=style,
                                                     distance_style="impurity",
                                                     levels=None)

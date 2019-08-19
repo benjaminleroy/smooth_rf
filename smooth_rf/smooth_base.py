@@ -310,22 +310,24 @@ def create_distance_mat_leaves(tree=None,
     distance_matrix : array (n_leaves, n_leaves)
         non-symetric "distance" matrix relative to leaves in the tree - to be
         read "distance from row leave to column leave"
-
+    expected_levels : int or None
+        integer of the number of levels (if using distance_style = "depth" or
+        leves is not None)
     """
 
     if (type(distance_style) is list) and (len(distance_style) > 1):
         distance_style = distance_style[0]
 
     if distance_style not in ["depth", "impurity"]:
-        ValueError("distance_style parameter needs to be 1 of the 2 choices.")
+        raise ValueError("distance_style parameter needs to be 1 of the 2 choices.")
 
     if distance_style == "impurity":
         if tree is None and \
             (decision_mat_leaves is None or change_in_impurity_vec is None):
-            ValueError("you must either provide a tree or a (decision_mat_leaves, change_in_impurity_vec) pair for impurity distance")
+            raise ValueError("you must either provide a tree or a (decision_mat_leaves, change_in_impurity_vec) pair for impurity distance")
     else:
         if tree is None and decision_mat_leaves is None:
-            ValueError("you must either provide a tree or a decision_mat_leaves for depth distance")
+            raise ValueError("you must either provide a tree or a decision_mat_leaves for depth distance")
 
 
     if decision_mat_leaves is None:
@@ -337,9 +339,9 @@ def create_distance_mat_leaves(tree=None,
 
 
     if levels is not None:
-        if type(levels) is not int:
-            if type(levels) is not np.ndarray:
-                ValueError("levels parameter needs to be an integer, np.ndarray or None.")
+        if type(levels) is not np.ndarray:
+            if type(levels) is not int and levels.shape != ():
+                raise ValueError("levels parameter needs to be an integer, np.ndarray or None.")
 
 
     if distance_style == "depth":
@@ -370,7 +372,7 @@ def create_distance_mat_leaves(tree=None,
 
         standard_distance = -(d - Q.T).T
     else:
-        ValueError("distance_style parameter needs to be 1 of the 2 choices.")
+        raise ValueError("distance_style parameter needs to be 1 of the 2 choices.")
 
     if style == "standard":
         out = standard_distance
@@ -406,20 +408,22 @@ def create_distance_mat_leaves(tree=None,
                                          1)), axis = 2)
         out = np.min(both, axis = 2)
     else:
-        ValueError("style parameter needs to be 1 of the 3 choices.")
+        raise ValueError("style parameter needs to be 1 of the 3 choices.")
 
 
 
     if distance_style != "impurity" or levels is None:
-        return out
+        if distance_style != "impurity":
+            return out, None
+        else:
+            return out, np.max(out)
     elif type(levels) is int or levels.shape == ():
         # need to discretize
         if type(out) is scipy.sparse.coo.coo_matrix or \
             type(out) is scipy.sparse.csr.csr_matrix:
             out = out.todense()
 
-        breaks = np.quantile(out, q = np.arange(levels + 2)/\
-                    (levels + 1))
+        breaks = np.quantile(out, q = np.arange(levels + 1)/(levels))
     else:
         breaks = levels
 
@@ -441,7 +445,9 @@ def create_distance_mat_leaves(tree=None,
     out2 = np.array(pd.cut(np.array(out).ravel(),
                            bins=breaks, labels=False)).reshape(out.shape)
 
-    return out2
+    expected_levels = breaks.shape[0]
+
+    return out2, expected_levels
 
 def create_Gamma_eta_tree(tree,
                       dist_mat_leaves=None,
@@ -511,31 +517,36 @@ def create_Gamma_eta_tree(tree,
         # yhat_leaf_original = np.diag(1/n_leaf_original) @ ny_leaf_original
 
     else:
-        ValueError("tree needs either be a "+\
+        raise ValueError("tree needs either be a "+\
                    "sklearn.tree.tree.DecisionTreeClassifier "+\
                    "or a sklearn.tree.tree.DecisionTreeRegressor")
 
     ##############################
     ## Distance Matrix Creation ##
     ##############################
+    expected_levels = None
 
     if dist_mat_leaves is None:
         if (type(distance_style) is list) and (len(distance_style) > 1):
             distance_style = distance_style[0]
 
         if distance_style not in ["depth", "impurity"]:
-            ValueError("distance_style parameter needs to be 1 of the 2 "+\
+            raise ValueError("distance_style parameter needs to be 1 of the 2 "+\
                        "choices if no dist_mat_leaves is passed in")
 
-        if distance_style == "impurity" and (type(levels) is not int or\
-                                             type(levels) is not np.ndarray):
-            ValueError("if distance_style is impurity, levels must in integer or array")
+        if distance_style == "impurity" and (type(levels) is not np.ndarray and\
+                                             not (type(levels) is int)):
+            #pdb.set_trace()
+            raise ValueError("if distance_style is impurity, levels must in integer or array")
 
 
-        dist_mat_leaves = create_distance_mat_leaves(tree,
+        dist_mat_leaves, expected_levels = create_distance_mat_leaves(tree,
                                                 style=dist_mat_style,
                                                 distance_style=distance_style,
                                                 levels=levels)
+
+    if expected_levels is None:
+        expected_levels = np.max(dist_mat_leaves)
 
     # creating a 3d sparse array
     xx_all = np.zeros(shape = (0,))
@@ -543,7 +554,9 @@ def create_Gamma_eta_tree(tree,
     kk_all = np.zeros(shape = (0,))
 
 
-    for k_idx in np.arange(np.min(dist_mat_leaves), np.max(dist_mat_leaves)+1):
+
+    for k_idx in np.arange(np.min(dist_mat_leaves), # should always be zero...
+                           expected_levels + 1):
         if parents_all:
             xx, yy = np.where(dist_mat_leaves <= k_idx)
         else:
@@ -562,6 +575,7 @@ def create_Gamma_eta_tree(tree,
                               shape = (np.max(dist_mat_leaves)+1,
                                        dist_mat_leaves.shape[0],
                                        dist_mat_leaves.shape[1]))
+    #pdb.set_trace()
     Gamma = (inner_sparse @ ny_leaf_original).T
     eta = (inner_sparse @ n_leaf_original).T
 
@@ -569,7 +583,9 @@ def create_Gamma_eta_tree(tree,
 
 
 def create_Gamma_eta_forest(forest, verbose=False, parents_all=False,
-                            dist_mat_style=["standard", "max", "min"]):
+                            dist_mat_style=["standard", "max", "min"],
+                            distance_style=["depth", "impurity"],
+                            levels=None):
     """
     creates the Gamma and eta matrices for a forest (aka set of trees, where
     these two matrices are defined (per tree):
@@ -580,7 +596,8 @@ def create_Gamma_eta_forest(forest, verbose=False, parents_all=False,
     where n_j, y_j are the number of observations in leaf j and the predicted
     value associated with with leaf j for regression, or where y_j = p_j, a
     probably vector associated with leaf j in classification. Note that
-    D_ij is the tree based distance between leaf i and j.
+    D_ij is the tree based distance between leaf i and j (defined with
+    `distance_style` parameter).
 
     Arguments:
     ----------
@@ -592,9 +609,16 @@ def create_Gamma_eta_forest(forest, verbose=False, parents_all=False,
     parents_all : bool
         logic to instead include all observations with parent of distance k
         away
-   dist_mat_style : string
+    dist_mat_style : string
         style of inner-tree distance to use, see *details* in the
         create_distance_mat_leaves doc-string.
+    distance_style : string
+        distance style (use depth or difference in impurity)
+    levels : int or array
+        if distance_style = "impurity", this decides the number discrete
+        quantiles to look at (besides the value = 0 group). See *details* below
+        for more details.
+
 
     Returns:
     --------
@@ -609,9 +633,46 @@ def create_Gamma_eta_forest(forest, verbose=False, parents_all=False,
     t_idx_all : int array (sum_{t=1}^T n_leaves(t)
         integer array will holds which tree in the forest the associated row
         of Gamma_all or eta_all comes from
+
+    Details:
+    --------
+    levels
     """
 
-    _, max_depth = calc_depth_for_forest(forest, verbose = False)
+    if type(distance_style) != str and len(distance_style) > 1:
+        distance_style = distance_style[0]
+
+    # levels the same across tree
+    if distance_style == "impurity":
+        #pdb.set_trace()
+        if levels is None:
+            raise ValueError("levels needs to be either a vector or int when "+\
+                       "distance_style is 'impurity'.")
+        if type(levels) is int or levels.shape == ():
+            if len(forest) > 5:
+                inner_forest = [forest[t_idx]
+                    for t_idx in np.arange(5, dtype = np.int)]
+            else:
+                inner_forest = forest
+
+            levels = quantiles_distance_trees(inner_forest,
+                             style=dist_mat_style,
+                             distance_style=distance_style,
+                             levels=levels)
+
+
+    # obtaining max depth
+    if distance_style == "impurity":
+        _, expected_levels =  create_distance_mat_leaves(forest.estimators_[0],
+                                     style=dist_mat_style,
+                                     distance_style=distance_style,
+                                     levels=levels)
+        max_depth = expected_levels - 1
+    elif distance_style == "depth":
+        _, max_depth = calc_depth_for_forest(forest, verbose = False)
+    else:
+        raise ValueError("distance_style needs to be one of the 2 options.")
+
 
     if type(forest) is sklearn.ensemble.forest.RandomForestRegressor:
         Gamma_all = np.zeros(shape=(0, np.int(max_depth + 1)))
@@ -621,7 +682,7 @@ def create_Gamma_eta_forest(forest, verbose=False, parents_all=False,
         Gamma_all = np.zeros(shape=(num_class, 0, np.int(max_depth + 1)))
         g_idx = 2
     else:
-        ValueError("random_forest needs to be either a " +\
+        raise ValueError("random_forest needs to be either a " +\
                    "sklearn.ensemble.forest.RandomForestClassifier " +\
                    "or a sklearn.ensemble.forest.RandomForestRegressor")
 
@@ -630,13 +691,17 @@ def create_Gamma_eta_forest(forest, verbose=False, parents_all=False,
 
     first_iter = enumerate(forest.estimators_)
 
+
+
     if verbose:
         bar = progressbar.ProgressBar()
         first_iter = bar(list(first_iter))
 
     for t_idx, tree in first_iter:
         g, n = create_Gamma_eta_tree(tree, parents_all=parents_all,
-                                     dist_mat_style=dist_mat_style)
+                                     dist_mat_style=dist_mat_style,
+                                     distance_style=distance_style,
+                                     levels=levels)
         tree_n_leaf = g.shape[g_idx - 1]
         if g.shape[g_idx] != Gamma_all.shape[g_idx]:
             diff = Gamma_all.shape[g_idx] - g.shape[g_idx]
@@ -1075,7 +1140,7 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     elif type(random_forest) is sklearn.ensemble.RandomForestRegressor:
         rf_type = "reg"
     else:
-        ValueError("random_forest needs to be either a " +\
+        raise ValueError("random_forest needs to be either a " +\
                    "sklearn.ensemble.RandomForestClassifier " +\
                    "or a sklearn.ensemble.RandomForestRegressor")
 
@@ -1812,7 +1877,7 @@ def create_Gamma_eta_tree_more(tree,
         # yhat_leaf_original = np.diag(1/n_leaf_original) @ ny_leaf_original
 
     else:
-        ValueError("tree needs either be a "+\
+        raise ValueError("tree needs either be a "+\
                    "sklearn.tree.tree.DecisionTreeClassifier "+\
                    "or a sklearn.tree.tree.DecisionTreeRegressor")
 
@@ -1835,9 +1900,13 @@ def create_Gamma_eta_tree_more(tree,
     ##############################
 
 
-    dist_mat_leaves = create_distance_mat_leaves(tree,
-                                    decision_mat_leaves = decision_mat_leaves,
-                                    style = dist_mat_style)
+    dist_mat_leaves, expected_levels = create_distance_mat_leaves(tree,
+                                decision_mat_leaves = decision_mat_leaves,
+                                style = dist_mat_style)
+
+    if expected_levels is None:
+        expected_levels = np.max(dist_mat_leaves)
+
 
     ##########################
     # Gamma and Eta Creation #
@@ -1849,7 +1918,8 @@ def create_Gamma_eta_tree_more(tree,
     kk_all = np.zeros(shape = (0,))
 
 
-    for k_idx in np.arange(np.min(dist_mat_leaves), np.max(dist_mat_leaves)+1):
+    for k_idx in np.arange(np.min(dist_mat_leaves),  # should be zero ...
+                           expected_levels + 1):
         if parents_all:
             xx, yy = np.where(dist_mat_leaves <= k_idx)
         else:
@@ -1949,7 +2019,7 @@ def create_Gamma_eta_tree_more_per(tree,
         # yhat_leaf_original = np.diag(1/n_leaf_original) @ ny_leaf_original
 
     else:
-        ValueError("tree needs either be a "+\
+        raise ValueError("tree needs either be a "+\
                    "sklearn.tree.tree.DecisionTreeClassifier "+\
                    "or a sklearn.tree.tree.DecisionTreeRegressor")
 
@@ -1972,9 +2042,12 @@ def create_Gamma_eta_tree_more_per(tree,
     ##############################
 
 
-    dist_mat_leaves = create_distance_mat_leaves(tree,
-                                    decision_mat_leaves = decision_mat_leaves,
-                                    style = dist_mat_style)
+    dist_mat_leaves, expected_levels = create_distance_mat_leaves(tree,
+                                decision_mat_leaves = decision_mat_leaves,
+                                style = dist_mat_style)
+
+    if expected_levels is None:
+        expected_levels = np.max(dist_mat_leaves)
 
     ##########################
     # Gamma and Eta Creation #
@@ -1986,7 +2059,8 @@ def create_Gamma_eta_tree_more_per(tree,
     kk_all = np.zeros(shape = (0,))
 
 
-    for k_idx in np.arange(np.min(dist_mat_leaves), np.max(dist_mat_leaves)+1):
+    for k_idx in np.arange(np.min(dist_mat_leaves), # should be zero ...
+                           expected_levels + 1):
         if parents_all:
             xx, yy = np.where(dist_mat_leaves <= k_idx)
         else:
@@ -2145,7 +2219,7 @@ def create_Gamma_eta_forest_more(forest, verbose=False, parents_all=False,
         Gamma_all = np.zeros(shape=(num_class, 0, np.int(max_depth + 1)))
         g_idx = 2
     else:
-        ValueError("random_forest needs to be either a " +\
+        raise ValueError("random_forest needs to be either a " +\
                    "sklearn.ensemble.forest.RandomForestClassifier " +\
                    "or a sklearn.ensemble.forest.RandomForestRegressor")
 
@@ -2308,7 +2382,7 @@ def quantiles_distance_trees(forest,
     all_values = np.zeros(0)
 
     for tree in forest:
-        tree_values = create_distance_mat_leaves(tree,
+        tree_values, _ = create_distance_mat_leaves(tree,
                                                  style=style,
                                                  distance_style=distance_style,
                                                  levels=None) # not discretized
