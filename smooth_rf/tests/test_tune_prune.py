@@ -9,6 +9,41 @@ import sys, os
 
 import smooth_rf
 
+def test_prune_tree_full():
+
+    # data creation
+    X_train = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
+        np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
+    axis = 0)
+    y_train = np.concatenate((np.zeros(100, dtype = np.int),
+                             np.ones(100, dtype = np.int)))
+    amount = np.int(200)
+    s = 20
+    c = y_train[:amount]
+    # creating a random forest
+    rf_class_known = sklearn.ensemble.RandomForestClassifier(
+                                                        n_estimators = 1,
+                                                        min_samples_leaf = 1)
+    fit_rf_known = rf_class_known.fit(X = np.array(X_train)[:amount,:],
+                                      y = y_train[:amount].ravel())
+    forest = fit_rf_known.estimators_
+    tree = forest[0]
+
+    t = tree.tree_
+
+    n_obs_trained = X_train.shape[0]
+    random_state = tree.random_state
+    oob_indices = \
+        sklearn.ensemble.forest._generate_unsampled_indices(
+                                                         random_state,
+                                                         n_obs_trained)
+    X_tune = X_train[oob_indices,:]
+    y_tune = y_train[oob_indices]
+
+    decision_path = tree.decision_path(X_tune)
+    # need to get reg or class
+    tree.tree_.value
 
 def test_inner_prune():
     """

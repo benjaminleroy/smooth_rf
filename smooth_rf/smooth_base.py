@@ -1369,7 +1369,7 @@ def smooth(random_forest, X_trained=None, y_trained=None,
     if rf_type == "class":
         y_leaf_new_all = y_leaf_new_all.reshape((-1,num_classes),
                                                 order = "F")
-                                                # ^order by column, no row
+                                                # ^order by column, not row
         y_leaf_new_all2 = y_leaf_new_all2.reshape((-1,num_classes),
                                                   order = "F")
 
