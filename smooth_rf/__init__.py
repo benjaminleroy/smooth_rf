@@ -5,3 +5,4 @@ from .adam_sgd import *
 from .smooth_pytorch import *
 from .tune_depth import *
 from .tune_prune import *
+from .smooth_clean import *
