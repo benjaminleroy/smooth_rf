@@ -227,4 +227,151 @@ def test_calc_l2_grad():
             "expected dimensions of gradient should be (K,)"
 
 
+def test_l2_s_grad_for_adam_wrapper_clean():
+    """
+    test l2_s_grad_for_adam_wrapper
+    """
+    n_obs_class = 100
+    X_trained = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (n_obs_class,2)),
+        np.random.normal(loc = (-1.2, -.5), scale = .6,
+                         size = (n_obs_class,2))),
+        axis = 0)
+    y_trained = np.concatenate((np.zeros(n_obs_class, dtype = np.int),
+                         np.ones(n_obs_class, dtype = np.int))) + 100
+    # creating a random forest
+    n_trees = 5
+    rf_reg = sklearn.ensemble.RandomForestRegressor(
+                                                    n_estimators = n_trees,
+                                                    min_samples_leaf = 1)
+    fit_reg = rf_reg.fit(X = np.array(X_trained),
+                                  y = y_trained.ravel())
+    forest = fit_reg.estimators_
+
+    idx_mat, oob_weights = smooth_rf.generate_oob_info(forest, X_trained)
+
+    Gamma, eta, _ = smooth_rf.create_Gamma_eta_forest(fit_reg,
+                                                        parents_all=True)
+
+    for _ in range(5):
+        obs_idx = np.random.choice(X_trained.shape[0], size = 30)
+        wrapper_funct = smooth_rf.l2_s_grad_for_adam_wrapper_clean(Gamma, eta,
+                                         idx_mat, oob_weights, obs_idx,
+                                         y_trained)
+
+        for _ in range(10):
+            lamb = np.random.uniform(size = Gamma.shape[1])
+            lamb = lamb / lamb.sum()
+
+            g_straight = smooth_rf.calc_l2_grad(lamb, Gamma, eta,
+                                               idx_mat, oob_weights, obs_idx,
+                                               y_trained)
+            g_wrapper = wrapper_funct(lamb)
+
+            assert np.all(g_straight == g_wrapper), \
+                "l2 wrapper function should return same values at object it wraps"
+
+
+def test_smooth_clean_regressor():
+    """
+    test for smooth_clean- regressor, only runs on example dataset, checks for errs
+    """
+
+    X_trained = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
+        np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
+        axis = 0)
+    y_trained = np.concatenate((np.zeros(100, dtype = np.int),
+                         np.ones(100, dtype = np.int)))
+    amount = np.int(200)
+    # creating a random forest
+    rf_reg = sklearn.ensemble.RandomForestRegressor(
+                                                    n_estimators = 5,
+                                                    min_samples_leaf = 1)
+    fit_reg = rf_reg.fit(X = np.array(X_trained)[:amount,:],
+                                  y = y_trained[:amount].ravel())
+    forest = fit_reg.estimators_
+
+    random_forest = fit_reg
+    verbose = False
+    parents_all = True
+    dist_mat_style = "standard"
+    n_steps = 100
+
+    # general check for erroring
+    try:
+        a,b = smooth_rf.smooth_clean(random_forest,
+                 X_trained, y_trained,
+                 verbose=verbose,
+                 sgd_max_num=n_steps,
+                 parents_all=parents_all,
+                 dist_mat_style=dist_mat_style)
+
+    except:
+        assert False, \
+            "error running smoothing_clean for a random forest regressor"
+
+    # sanity check
+    a,b = smooth_rf.smooth_clean(random_forest,
+                 X_trained, y_trained,
+                 verbose=verbose,
+                 sgd_max_num=n_steps,
+                 sanity_check=True,
+                 parents_all=parents_all,
+                 dist_mat_style=dist_mat_style)
+
+    no_update_pred = a.predict(X_trained)
+    base_pred = random_forest.predict(X_trained)
+
+    assert np.all(no_update_pred == base_pred), \
+        "sanity check for rf regressor in smoother failed"
+
+    try:
+        a,b = smooth_rf.smooth_clean(random_forest, X_trained, y_trained,
+                                    parents_all=parents_all, verbose=verbose,
+                                    dist_mat_style=dist_mat_style,
+                                    sgd_max_num=n_steps,
+                                    adam = {"alpha": .001, "beta_1": .9,
+                                            "beta_2": .999,"eps": 1e-8})
+    except:
+        assert False, \
+            "error running smoothing_function for a random forest "+\
+            "regressor with adam"
+
+
+    # harder example
+    X_trained = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (200,2)),
+        np.random.normal(loc = (.5,2), scale = .6, size = (200,2))),
+        axis = 0)
+    y_trained = np.concatenate((np.zeros(200, dtype = np.int),
+                         np.ones(200, dtype = np.int))) + 100
+    amount = np.int(400)
+    # creating a random forest
+    rf_reg = sklearn.ensemble.RandomForestRegressor(
+                                                    n_estimators = 10,
+                                                    min_samples_leaf = 1)
+    fit_reg = rf_reg.fit(X = np.array(X_trained)[:amount,:],
+                                  y = y_trained[:amount].ravel())
+    forest = fit_reg.estimators_
+
+    random_forest = fit_reg
+    verbose = False
+    parents_all = True
+    dist_mat_style = "standard"
+
+    # general check for erroring
+    try:
+        a,b = smooth_rf.smooth_clean(random_forest, X_trained, y_trained,
+                                    sgd_max_num=n_steps,
+                                    parents_all=parents_all, verbose=verbose,
+                                    dist_mat_style=dist_mat_style,
+                                    adam={"alpha": .001, "beta_1": .9,
+                                            "beta_2": .999,"eps": 1e-8})
+
+    except:
+        assert False, \
+            "error running smoothing_function for a random forest regressor"
+
+
 

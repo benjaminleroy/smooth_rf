@@ -10,7 +10,7 @@ import pdb
 import itertools
 
 #from . import smooth_base
-from smooth_rf import smooth_base
+from smooth_rf import smooth_base, adam_sgd
 
 def generate_oob_info(forest, X_trained):
     """
@@ -434,15 +434,27 @@ def calc_y_oob_grad(lamb, Gamma, eta, idx_mat, oob_weights, obs_idx):
         calc_G_H_fill(lamb, Gamma, eta, idx_mat, obs_idx)
     G, H = create_G_H(Gamma, eta, idx_mat, obs_idx)
 
+    def get_G_fill(i, G_fill, n_trees):
+        G_fill_val = G_fill[np.arange(n_trees*i,
+                                      n_trees*(i+1), dtype = np.int)]
+        G_fill_val[G_fill_val == 0] = 1
+        return 1/G_fill_val
 
-    star = scipy.sparse.block_diag([1/G_fill[np.arange(n_trees*i,
-                                          n_trees*(i+1),dtype = np.int)]
+    def get_G_over_H2_fill(i, G_fill, H_fill, n_trees):
+        G_fill_val = G_fill[np.arange(n_trees*i,
+                                      n_trees*(i+1), dtype = np.int)]
+
+        H_fill_val = H_fill[np.arange(n_trees*i,
+                                      n_trees*(i+1), dtype = np.int)]
+
+        H_fill_val[H_fill_val == 0] = 1
+        return G_fill_val/H_fill_val**2
+
+    star = scipy.sparse.block_diag([get_G_fill(i, G_fill, n_trees)
                         for i in np.arange(obs_idx.shape[0], dtype = np.int)])
 
-    star2 = scipy.sparse.block_diag([G_fill[np.arange(n_trees*i,
-                                          n_trees*(i+1),dtype = np.int)]/\
-                                     H_fill[np.arange(n_trees*i,
-                                          n_trees*(i+1),dtype = np.int)]**2
+    star2 = scipy.sparse.block_diag(
+                [get_G_over_H2_fill(i, G_fill, H_fill, n_trees)
                         for i in np.arange(obs_idx.shape[0], dtype = np.int)])
 
     grad = star @ scipy.sparse.diags(oob_weights_inner) @ G -\
@@ -543,7 +555,8 @@ def test_calc_l2_grad():
     n_obs_class = 100
     X_trained = np.concatenate(
         (np.random.normal(loc = (1,2), scale = .6, size = (n_obs_class,2)),
-        np.random.normal(loc = (-1.2, -.5), scale = .6, size = (n_obs_class,2))),
+        np.random.normal(loc = (-1.2, -.5), scale = .6,
+                         size = (n_obs_class,2))),
         axis = 0)
     y_trained = np.concatenate((np.zeros(n_obs_class, dtype = np.int),
                          np.ones(n_obs_class, dtype = np.int))) + 100
@@ -558,27 +571,594 @@ def test_calc_l2_grad():
 
     idx_mat, oob_weights = generate_oob_info(forest, X_trained)
 
-    Gamma, eta, _ = smooth_base.create_Gamma_eta_forest(fit_reg, parents_all=True)
+    Gamma, eta, _ = smooth_base.create_Gamma_eta_forest(fit_reg,
+                                                        parents_all=True)
 
     lamb = np.zeros(Gamma.shape[1])
     lamb[0] = 1
 
     for _ in np.arange(5):
-        obs_idx = np.random.choice(X_trained.shape[0], size = 20, replace = False)
-        grad = calc_l2_grad(lamb, Gamma, eta, idx_mat, oob_weights, obs_idx, y_trained)
+        obs_idx = np.random.choice(X_trained.shape[0], size = 20,
+                                   replace = False)
+        grad = calc_l2_grad(lamb, Gamma, eta, idx_mat,
+                            oob_weights, obs_idx, y_trained)
 
         assert grad.shape[0] == Gamma.shape[1], \
             "expected dimensions of gradient should be (K,)"
 
 
+def calc_cost_l2_straight(y_oob, y_trained, ever_oob):
+    """
+    calc sum_i 1/(n_oob) |y_oob(i) - y_trained(i)|^2
+    """
 
-def smooth_clean():
-    # 1. allow for keeping track of full loss if desired
-    # 2. impliment adam
-    # 3. do without constraint
-    # 4. do sanity check
-    # 5. allow for stocastic and full grad descent
-    # (basically have same structure as smooth() from smooth_base)
-    #
-    # this looks like a major (even though it's just a copy of the last code basically)
-    pass
+    return np.mean((y_oob[ever_oob] - y_trained[ever_oob])**2)
+
+
+
+def l2_s_grad_for_adam_wrapper_clean(Gamma, eta,
+                                     idx_mat, oob_weights, obs_idx,
+                                     y_trained):
+    """
+    Stocastic gradient for l2 loss to be inserted into adam_step (clean)
+
+    gradient relative to mean_i |y_oob(i)-y(i)|^2
+
+    Arguments:
+    ----------
+    Gamma : array (Tn, K)
+        A horizontal stacking of Gamma matrices as defined above for all trees
+        in the forest. See details below
+    eta : array (Tn, K)
+        A horizontal stacking of eta matrices as defined above for all trees
+        in the forest.
+    idx_mat : int array (n, T)
+        array with information relative to which leaf of a tree each
+        observation (row) falls under (defined in more details in
+        smooth_rf.generate_oob_info documentation)
+    oob_weights : array (nT, )
+        indicator vector that informs if observation falls into tree i.
+        Specifically, value T*i + t is 1 if observation i was oob for tree t,
+        and 0 otherwise (defined in more details in smooth_rf.generate_oob_info
+        documentation).
+    obs_idx : int array (m, )
+        indices of observations would like to examine
+    y_trained : array (n, )
+        y data array used to create the inputted random_forest
+
+    Returns:
+    --------
+
+    l2_sg_adam : lambda function
+        lambda function of take_gradient function whos only is input is lamb
+    """
+
+    l2_sg_adam = lambda lamb: calc_l2_grad(lamb, Gamma, eta,
+                                           idx_mat, oob_weights, obs_idx,
+                                           y_trained)
+
+    return l2_sg_adam
+
+def test_l2_s_grad_for_adam_wrapper_clean():
+    """
+    test l2_s_grad_for_adam_wrapper
+    """
+    n_obs_class = 100
+    X_trained = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (n_obs_class,2)),
+        np.random.normal(loc = (-1.2, -.5), scale = .6,
+                         size = (n_obs_class,2))),
+        axis = 0)
+    y_trained = np.concatenate((np.zeros(n_obs_class, dtype = np.int),
+                         np.ones(n_obs_class, dtype = np.int))) + 100
+    # creating a random forest
+    n_trees = 5
+    rf_reg = sklearn.ensemble.RandomForestRegressor(
+                                                    n_estimators = n_trees,
+                                                    min_samples_leaf = 1)
+    fit_reg = rf_reg.fit(X = np.array(X_trained),
+                                  y = y_trained.ravel())
+    forest = fit_reg.estimators_
+
+    idx_mat, oob_weights = generate_oob_info(forest, X_trained)
+
+    Gamma, eta, _ = smooth_base.create_Gamma_eta_forest(fit_reg,
+                                                        parents_all=True)
+
+    for _ in range(5):
+        obs_idx = np.random.choice(X_trained.shape[0], size = 30)
+        wrapper_funct = l2_s_grad_for_adam_wrapper_clean(Gamma, eta,
+                                         idx_mat, oob_weights, obs_idx,
+                                         y_trained)
+
+        for _ in range(10):
+            lamb = np.random.uniform(size = Gamma.shape[1])
+            lamb = lamb / lamb.sum()
+
+            g_straight = calc_l2_grad(lamb, Gamma, eta,
+                                               idx_mat, oob_weights, obs_idx,
+                                               y_trained)
+            g_wrapper = wrapper_funct(lamb)
+
+            assert np.all(g_straight == g_wrapper), \
+                "l2 wrapper function should return same values at object it wraps"
+
+
+
+def stocastic_grad_descent_clean(Gamma, eta, idx_mat, oob_weights, y_trained,
+                                 lamb_init,
+                                 n_obs=20, use_full_loss=False,
+                                 t_fix=1, num_steps=10000,
+                                 no_constraint=False,verbose=True,
+                                 adam=None):
+    """
+    Preform stocastic gradient descent to minimize the l2 defined by
+
+    sum_i (y_oob(i) - y)^2
+
+    The stocastic gradient steps randomly select a subset of observations for
+    each step to estimate the gradient with.
+
+    Arguments:
+    ----------
+    Gamma : array (Tn, K)
+        A horizontal stacking of Gamma matrices as defined above for all trees
+        in the forest. See details below
+    eta : array (Tn, K)
+        A horizontal stacking of eta matrices as defined above for all trees
+        in the forest.
+    idx_mat : int array (n, T)
+        array with information relative to which leaf of a tree each
+        observation (row) falls under (defined in more details in
+        smooth_rf.generate_oob_info documentation)
+    oob_weights : array (nT, )
+        indicator vector that informs if observation falls into tree i.
+        Specifically, value T*i + t is 1 if observation i was oob for tree t,
+        and 0 otherwise (defined in more details in smooth_rf.generate_oob_info
+        documentation).
+    y_trained : array (n, )
+        y data array used to create the inputted random_forest
+    lamb_init : array (K,)
+        inital lambda value
+    n_obs : int
+        number of observations for each step of stocastic gradient descent
+    use_full_loss : bool
+        logic to use and track full loss (even if doing sgd). If all_obs is
+        TRUE, then this will be corrected to being true.
+    num_steps : int
+        number of steps for stocastic gradient descent to take (default 1000)
+    no_constraint : bool
+        logic for if the space for lamb values is constrainted onto the simplex
+    verbose : bool
+        logic to show steps of stocastic gradient descent
+    adam : dict (default is None)
+        dictionary for input parameters adam SGD (if None, regular SGD is used)
+        Note expected structure looks like:
+            {"alpha": .001, "beta_1": .9, "beta_2": .999,"eps": 1e-8}
+    Returns:
+    --------
+    lamb_best, lamb, cost_all
+
+    Details:
+    --------
+    *Gamma* and *eta*
+    Gamma and eta matrices are from a forest (aka set of trees, where
+    these two matrices are defined (per tree):
+
+    Gamma_il = sum_j II(D_ij =(or <=) l) n_j y_j
+    eta_il = sum_j II(D_ij =(or <=) l) n_j
+
+    where n_j, y_j are the number of observations in leaf j and the predicted
+    value associated with with leaf j. Note that D_ij is the tree based
+    distance between leaf i and j.
+    """
+
+    if Gamma.shape[1] != lamb_init.shape[0]:
+        raise TypeError("lamb_init needs to be the same length as the "+\
+                        "number of columns in Gamma and eta")
+    if not no_constraint and (np.sum(lamb_init)!=1 or np.any(lamb_init < 0)):
+        raise TypeError("For simplicity please initialize lamb_init with "+\
+                        "a feasible value \n(ex: np.ones(Gamma.shape[1])/"+\
+                        "Gamma.shape[1] )")
+
+    if verbose:
+        bar = progressbar.ProgressBar()
+        first_iter = bar(np.arange(num_steps))
+    else:
+        first_iter = range(num_steps)
+
+    if adam is None:
+        reg_sgd = True
+    else:
+        reg_sgd = False
+
+    lamb = lamb_init
+
+    cost_all = []
+
+    for s_step in first_iter:
+        # select obs idx
+        obs_idx = np.random.choice(idx_mat.shape[0],
+                                   size=n_obs, replace=False)
+
+        # initial cost calculation
+        if s_step == 0:
+            if use_full_loss:
+                y_oob, ever_oob = calc_y_oob(lamb, Gamma, eta,
+                                        idx_mat, oob_weights,
+                                        np.arange(idx_mat.shape[0],
+                                                  dtype = np.int))
+                cost_best = calc_cost_l2_straight(y_oob,
+                                      y_trained[obs_idx],
+                                      ever_oob)
+                cost_all.append(cost_best)
+                lamb_best = lamb
+            else:
+                y_oob, ever_oob = calc_y_oob(lamb, Gamma, eta,
+                                             idx_mat, oob_weights, obs_idx)
+                cost_all.append(
+                    calc_cost_l2_straight(y_oob,
+                                          y_trained[obs_idx],
+                                          ever_oob))
+
+
+        if reg_sgd: # regular sgd
+            grad = calc_l2_grad(lamb, Gamma, eta,
+                                idx_mat, oob_weights, obs_idx,
+                                y_trained)
+
+            lamb = lamb - t_fix * grad
+        else: # adam sgd
+            take_gradient_adam = l2_s_grad_for_adam_wrapper_clean(
+                                    Gamma, eta,
+                                    idx_mat, oob_weights, obs_idx,
+                                    y_trained)
+            if s_step == 0:
+                iv = None
+            lamb, iv = adam_sgd.adam_step(grad_fun = take_gradient_adam,
+                                          lamb_init = lamb,
+                                          internal_values = iv,
+                                          **adam)
+
+        if not no_constraint:
+           lamb = smooth_base.prox_project(lamb)
+
+        if use_full_loss:
+            y_oob, ever_oob = calc_y_oob(lamb, Gamma, eta,
+                                    idx_mat, oob_weights,
+                                    np.arange(idx_mat.shape[0],
+                                              dtype = np.int))
+            cost_new = calc_cost_l2_straight(y_oob,
+                                  y_trained[obs_idx],
+                                  ever_oob)
+            cost_all.append(cost_new)
+
+            if cost_new < cost_new:
+                cost_best = cost_new
+                lamb_best = lamb
+        else:
+            y_oob, ever_oob = calc_y_oob(lamb, Gamma, eta,
+                                         idx_mat, oob_weights, obs_idx)
+            cost_all.append(
+                calc_cost_l2_straight(y_oob,
+                                      y_trained[obs_idx],
+                                      ever_oob))
+
+    if not use_full_loss:
+        lamb_best = lamb
+
+
+    return lamb_best, lamb, cost_all
+
+
+# 1. allow for keeping track of full loss if desired
+# 2. impliment adam
+# 3. do without constraint
+# 4. do sanity check
+# 5. allow for stocastic and full grad descent
+# (basically have same structure as smooth() from smooth_base)
+#
+# this looks like a major (even though it's just a copy of the last code basically)
+
+def smooth_clean(random_forest,
+                 X_trained, y_trained,
+                 verbose=True,
+                 no_constraint=False, sanity_check=False,
+                 sgd_max_num=10000, sgd_t_fix=1,
+                 all_obs=False, use_full_loss=False,
+                 sgd_n_obs=50,
+                 initial_lamb_seed=None,
+                 parents_all=False,
+                 dist_mat_style=["standard","max", "min"],
+                 distance_style=["depth", "impurity"],
+                 levels=None,
+                 adam=None):
+    """
+    creates a smooth random forest (1 lambda set across all trees)
+
+    - CURRENTLY CODED FOR REGRESSION ONLY.
+
+    this version uses y_oob vs y as it's loss
+
+    Args:
+    ----
+    random_forest : sklearn forest
+            (sklearn.ensemble.forest.RandomForestRegressor or
+            sklearn.ensemble.forest.RandomForestClassifier)
+        pre-trained classification or regression based random forest
+    X_trained : array (n, p)
+        X data array used to create the inputted random_forest. Note that this
+        is assumed to be the correct data - and is used for the smoothing.
+    y_trained : array (n, )
+        y data array used to create the inputted random_forest
+    verbose : bool
+        logic to show tree analysis process
+    no_constraint : bool
+        logic to not constrain the weights
+    sanity_check : bool
+        logic to do full process but keep same weights
+    sgd_max_num : int
+        number of steps to take for the stocastic gradient optimization
+    sgd_t_fix : scalar
+        value for fixed t step size for stocastic gradient descent
+    all_obs : bool
+        logic to use all observations (and therefore do full gradient descent)
+    use_full_loss : bool
+        logic to use and track full loss (even if doing sgd). If all_obs is
+        TRUE, then this will be corrected to being true.
+    sgd_n_obs : int
+        number of observations for each stocastic gradient descent step - this
+        is overrided if all_obs is TRUE.
+    initial_lamb_seed : scalar
+        initial value for seed (default is None) to randomly select the
+        starting point of lambda
+    parents_all : bool
+        logic to instead include all observations with parent of distance k
+        away
+    distance_style : string
+        style of inner-tree distance to use, see *details* in the
+        create_distance_mat_leaves doc-string.
+    dist_mat_style : string
+        style of inner-tree distance matrix to use, see *details* in the
+        create_distance_mat_leaves doc-string.
+    distance_style : string
+        distance style (use depth or difference in impurity) see *details*
+        in the create_distance_mat_leaves doc-string.
+    levels : int, or array or None
+        levels to discretize distance into (see *details* in the
+        create_distance_mat_leaves doc-string.)
+    adam : dict (default is None)
+        dictionary for input parameters adam SGD (if None, regular SGD is used)
+        Note expected structure looks like:
+            {"alpha": .001, "beta_1": .9, "beta_2": .999,"eps": 1e-8}
+
+    Returns:
+    --------
+    inner_rf : RandomForestClassifier or RandomForestRegressor
+        updated smoothed random forest with optional lambda weighting, also has
+        a .lamb parameter that stores weighting
+    c : list
+        list of cost value for each stocastic gradient descent (full or partial
+         depending upon use_full_loss)
+    """
+    if type(random_forest) is sklearn.ensemble.RandomForestClassifier:
+        rf_type = "class"
+        raise ValueError("currently just coded for regression case.")
+    elif type(random_forest) is sklearn.ensemble.RandomForestRegressor:
+        rf_type = "reg"
+    else:
+        raise ValueError("random_forest needs to be either a " +\
+                   "sklearn.ensemble.RandomForestClassifier " +\
+                   "or a sklearn.ensemble.RandomForestRegressor")
+
+
+    if rf_type == "class" and no_constraint == True:
+        raise ValueError("for probabilities for the smoothed classification "+\
+                         "rf to be consistent, you need to constrain the " +\
+                         "lambda in the simplex (no_constraint = False) - " +\
+                         "or at least have only positive values.")
+
+
+
+
+
+    inner_rf = copy.deepcopy(random_forest)
+
+    forest = inner_rf.estimators_
+
+    # getting structure from built trees
+    Gamma, eta, _ = smooth_base.create_Gamma_eta_forest(random_forest,
+                                            verbose=verbose,
+                                            parents_all=parents_all,
+                                            dist_mat_style=dist_mat_style,
+                                            distance_style=distance_style,
+                                            levels=levels)
+
+    idx_mat, oob_weights = generate_oob_info(forest, X_trained)
+
+    #---
+    # Optimization
+    #---
+    if initial_lamb_seed is None:
+        lamb = np.zeros(Gamma.shape[-1]) #sanity check
+        lamb[0] = 1
+    else:
+        np.random.seed(initial_lamb_seed)
+        lamb = np.random.uniform(size = Gamma.shape[-1])
+        lamb = lamb / lamb.sum()
+
+    # if rf_type == "class": # to avoid initial problems in cross-entropy loss
+    #     lamb = lamb + np.ones(lamb.shape[0]) * class_eps / lamb.shape[0]
+    #     lamb = lamb / lamb.sum()
+    #     lamb = lamb / lamb.sum() # need to do twice...
+
+    if all_obs:
+        sgd_n_obs = X_trained.shape[0]
+        use_full_loss = True
+
+    # if rf_type == "class":
+    #     Gamma_shape = Gamma.shape
+    #     num_classes = Gamma.shape[0]
+    #     Gamma = Gamma.reshape((Gamma.shape[0]*Gamma.shape[1],
+    #                                  Gamma.shape[2]))
+
+    #     eta = np.tile(eta, (num_classes,1))
+    #     y_all = y_all.T.reshape((-1,))
+    #     weight_all = np.tile(weight_all, num_classes)
+    #     t_idx_vec = np.tile(t_idx_vec, num_classes)
+
+    if not sanity_check:
+        if rf_type == "reg":
+            lamb, lamb_last, c = stocastic_grad_descent_clean(
+                                Gamma, eta, idx_mat,
+                                oob_weights, y_trained,
+                                n_obs=sgd_n_obs, use_full_loss=use_full_loss,
+                                lamb_init=lamb, t_fix=sgd_t_fix,
+                                num_steps=sgd_max_num,
+                                no_constraint=no_constraint,verbose=verbose,
+                                adam=adam)
+    else:
+        c = []
+        # for sanity check
+        lamb = np.zeros(Gamma.shape[-1])
+        lamb[0] = 1
+
+
+    #---
+    # update random forest object (correct estimates from new lambda)
+    #---
+    # to avoid divide by 0 errors (this may be a problem relative to the
+    #   observed values)
+
+
+    eta_fill = (eta @ lamb)
+    eta_fill[eta_fill == 0] = 1
+    y_leaf_new_all = (Gamma @ lamb) / eta_fill
+    y_leaf_new_all[(eta @ lamb) == 0] = 0
+
+    if rf_type == "class":
+        y_leaf_new_all = y_leaf_new_all.reshape((-1,num_classes),
+                                                order = "F")
+                                                # ^order by column, not row
+
+    start_idx = 0
+    for t in forest:
+        tree = t.tree_
+        num_leaf = np.sum(tree.children_left == -1)
+
+        if rf_type == "reg":
+            tree.value[tree.children_left == -1,:,:] = \
+                y_leaf_new_all[start_idx:(start_idx + num_leaf)].reshape((-1,1,1))
+        else:
+            tree.value[tree.children_left == -1,:,:] = \
+                y_leaf_new_all[start_idx:(start_idx + num_leaf)].reshape((-1,1,num_classes))
+
+        start_idx += num_leaf
+
+    inner_rf.lamb = lamb
+
+    return inner_rf, c
+
+
+
+
+def test_smooth_clean_regressor():
+    """
+    test for smooth_clean- regressor, only runs on example dataset, checks for errs
+    """
+
+    X_trained = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (100,2)),
+        np.random.normal(loc = (-1.2, -.5), scale = .6, size = (100,2))),
+        axis = 0)
+    y_trained = np.concatenate((np.zeros(100, dtype = np.int),
+                         np.ones(100, dtype = np.int)))
+    amount = np.int(200)
+    # creating a random forest
+    rf_reg = sklearn.ensemble.RandomForestRegressor(
+                                                    n_estimators = 5,
+                                                    min_samples_leaf = 1)
+    fit_reg = rf_reg.fit(X = np.array(X_trained)[:amount,:],
+                                  y = y_trained[:amount].ravel())
+    forest = fit_reg.estimators_
+
+    random_forest = fit_reg
+    verbose = False
+    parents_all = True
+    dist_mat_style = "standard"
+    n_steps = 100
+
+    # general check for erroring
+    try:
+        a,b = smooth_clean(random_forest,
+                 X_trained, y_trained,
+                 verbose=verbose,
+                 sgd_max_num=n_steps,
+                 parents_all=parents_all,
+                 dist_mat_style=dist_mat_style)
+
+    except:
+        assert False, \
+            "error running smoothing_clean for a random forest regressor"
+
+    # sanity check
+    a,b = smooth_clean(random_forest,
+                 X_trained, y_trained,
+                 verbose=verbose,
+                 sgd_max_num=n_steps,
+                 sanity_check=True,
+                 parents_all=parents_all,
+                 dist_mat_style=dist_mat_style)
+
+    no_update_pred = a.predict(X_trained)
+    base_pred = random_forest.predict(X_trained)
+
+    assert np.all(no_update_pred == base_pred), \
+        "sanity check for rf regressor in smoother failed"
+
+    try:
+        a,b = smooth_clean(random_forest, X_trained, y_trained,
+                                    parents_all=parents_all, verbose=verbose,
+                                    dist_mat_style=dist_mat_style,
+                                    sgd_max_num=n_steps,
+                                    adam = {"alpha": .001, "beta_1": .9,
+                                            "beta_2": .999,"eps": 1e-8})
+    except:
+        assert False, \
+            "error running smoothing_function for a random forest "+\
+            "regressor with adam"
+
+
+    # harder example
+    X_trained = np.concatenate(
+        (np.random.normal(loc = (1,2), scale = .6, size = (200,2)),
+        np.random.normal(loc = (.5,2), scale = .6, size = (200,2))),
+        axis = 0)
+    y_trained = np.concatenate((np.zeros(200, dtype = np.int),
+                         np.ones(200, dtype = np.int))) + 100
+    amount = np.int(400)
+    # creating a random forest
+    rf_reg = sklearn.ensemble.RandomForestRegressor(
+                                                    n_estimators = 10,
+                                                    min_samples_leaf = 1)
+    fit_reg = rf_reg.fit(X = np.array(X_trained)[:amount,:],
+                                  y = y_trained[:amount].ravel())
+    forest = fit_reg.estimators_
+
+    random_forest = fit_reg
+    verbose = False
+    parents_all = True
+    dist_mat_style = "standard"
+
+    # general check for erroring
+    try:
+        a,b = smooth_clean(random_forest, X_trained, y_trained,
+                                    sgd_max_num=n_steps,
+                                    parents_all=parents_all, verbose=verbose,
+                                    dist_mat_style=dist_mat_style,
+                                    adam={"alpha": .001, "beta_1": .9,
+                                            "beta_2": .999,"eps": 1e-8})
+
+    except:
+        assert False, \
+            "error running smoothing_function for a random forest regressor"
