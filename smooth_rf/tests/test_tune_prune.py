@@ -92,7 +92,6 @@ def test_inner_prune():
 
     p_df = smooth_rf.tune_prune._initialize_prune_df(test)
 
-
     # root node
     prune_idx = 0
 
@@ -262,12 +261,12 @@ def test_inner_prune_down():
                      children_right,
                      value)
 
-    p_df = _initialize_prune_df(test)
+    p_df = smooth_rf.tune_prune._initialize_prune_df(test)
 
 
     # root node
     prune_idx = 0
-    out_df = _inner_prune_down(p_df, prune_idx)
+    out_df = smooth_rf.tune_prune._inner_prune_down(p_df, prune_idx)
 
     assert np.all(out_df.loc[out_df.idx != 0, "c_left"] == -2) and \
         np.all(out_df.loc[out_df.idx != 0, "c_right"] == -2) and \
@@ -348,7 +347,7 @@ def test_initialize_prune_df_classification():
 
     tree = random_forest.estimators_[0]
 
-    p_df = _initialize_prune_df(tree)
+    p_df = smooth_rf.tune_prune._initialize_prune_df(tree, X, y)
 
     assert p_df.shape == (tree.tree_.children_left.shape[0], 8), \
         "pruned_df should have 8 columns and num_nodes rows"
@@ -404,7 +403,7 @@ def test_initialize_prune_df_classification():
                      children_right,
                      value)
 
-    r_single_t_val = r_single_t(test)
+    r_single_t_val = smooth_rf.tune_prune.r_single_t(test)
 
     r_T_t = r_single_t_val.copy()
     r_T_t[4] = (r_T_t[5]*nn[5] + r_T_t[6]*nn[6])/nn[4]
@@ -412,7 +411,7 @@ def test_initialize_prune_df_classification():
     r_T_t[0] = (r_T_t[1]*nn[1] + r_T_t[2]*nn[2])/nn[0]
 
 
-    p_df = _initialize_prune_df(test)
+    p_df = smooth_rf.tune_prune._initialize_prune_df(test)
 
     assert np.any(p_df.idx == np.arange(p_df.shape[0], dtype = np.int)), \
         "idx should be ordered 0:num_nodes"
@@ -434,7 +433,7 @@ def test_initialize_prune_df_classification():
     assert np.all(p_df.c_right == children_right), \
         "static example, children_right incorrectly stored"
 
-    assert np.all(p_df.parent ==  calc_parent(test)), \
+    assert np.all(p_df.parent ==  smooth_rf.calc_parent(test)), \
         "static example, p_df.parent is same as calc_parent"
 
 def test_initialize_prune_df_regression():
@@ -457,7 +456,7 @@ def test_initialize_prune_df_regression():
 
     tree = random_forest.estimators_[0]
 
-    p_df = _initialize_prune_df(tree)
+    p_df = smooth_rf.tune_prune._initialize_prune_df(tree, X, y)
 
     assert p_df.shape == (tree.tree_.children_left.shape[0], 8), \
         "pruned_df should have 8 columns and num_nodes rows"
@@ -505,7 +504,7 @@ def test_initialize_prune_df_regression():
                      children_right,
                      impurity)
 
-    r_single_t_val = r_single_t(test)
+    r_single_t_val = smooth_rf.tune_prune.r_single_t(test)
 
     r_T_t = r_single_t_val.copy()
     r_T_t[4] = (r_T_t[5]*nn[5] + r_T_t[6]*nn[6])/nn[4]
@@ -513,7 +512,7 @@ def test_initialize_prune_df_regression():
     r_T_t[0] = (r_T_t[1]*nn[1] + r_T_t[2]*nn[2])/nn[0]
 
 
-    p_df = _initialize_prune_df(test)
+    p_df = smooth_rf.tune_prune._initialize_prune_df(test)
 
     assert np.any(p_df.idx == np.arange(p_df.shape[0], dtype = np.int)), \
         "idx should be ordered 0:num_nodes"
@@ -535,7 +534,7 @@ def test_initialize_prune_df_regression():
     assert np.all(p_df.c_right == children_right), \
         "static example, children_right incorrectly stored"
 
-    assert np.all(p_df.parent ==  calc_parent(test)), \
+    assert np.all(p_df.parent ==  smooth_rf.calc_parent(test)), \
         "static example, p_df.parent is same as calc_parent"
 
 
@@ -557,13 +556,13 @@ def test_r_single_t_regression():
                                  y = y.ravel())
 
     tree = random_forest.estimators_[0]
-    r_single_t_val = r_single_t(tree)
+    r_single_t_val = smooth_rf.tune_prune.r_single_t(tree)
 
     assert r_single_t_val.shape == tree.tree_.children_left.shape, \
         "r_single_t output should be the same length as number of nodes"
 
-    assert np.all((r_single_t_val >= r_single_t_val[tree.tree_.children_left]) +\
-                  (r_single_t_val >= r_single_t_val[tree.tree_.children_right]) >= 1), \
+    assert np.all(1 * (r_single_t_val >= r_single_t_val[tree.tree_.children_left]) +\
+                  1 * (r_single_t_val >= r_single_t_val[tree.tree_.children_right]) >= 1), \
         "parents should have more loss at least one child - in tree"
 
     # static check
@@ -615,7 +614,7 @@ def test_r_single_t_regression():
                      children_right,
                      impurity)
 
-    assert np.all(r_single_t(test) == impurity), \
+    assert np.all(smooth_rf.tune_prune.r_single_t(test) == impurity), \
         "static tree's r_single_t should be MSE per node"
 
 
@@ -648,11 +647,11 @@ def test_r_single_t_classification():
                                  y = y.ravel())
 
     tree = random_forest.estimators_[0]
-    r_single_t_val = r_single_t(tree)
+    r_single_t_val = smooth_rf.tune_prune.r_single_t(tree)
 
     assert r_single_t_val.shape == tree.tree_.children_left.shape, \
         "r_single_t output should be the same length as number of nodes"
-    parents = calc_parent(tree)
+    parents = smooth_rf.calc_parent(tree)
 
     assert np.all((r_single_t_val >= r_single_t_val[tree.tree_.children_left]) +\
                   (r_single_t_val >= r_single_t_val[tree.tree_.children_right]) >= 1), \
@@ -705,7 +704,7 @@ def test_r_single_t_classification():
                      children_right,
                      value)
 
-    assert np.all(r_single_t(test) == expected_missclass), \
+    assert np.all(smooth_rf.tune_prune.r_single_t(test) == expected_missclass), \
         "static tree's r_single_t should be misclassification rate per node"
 
 
@@ -727,7 +726,9 @@ def test_calc_parent():
     random_forest = rf_class.fit(X = X,
                                  y = y.ravel())
 
-    parents = calc_parent(tree)
+    tree = random_forest[0]
+
+    parents = smooth_rf.calc_parent(tree)
 
     assert parents.shape == tree.tree_.children_left.shape, \
         "size dimension of parents should be same as the number of nodes"
@@ -769,7 +770,7 @@ def test_calc_parent():
 
     test = fake_tree(children_left,children_right)
 
-    parents = calc_parent(test)
+    parents = smooth_rf.calc_parent(test)
 
     expected_parents = np.array([-1,0,0,2,2,4,4], dtype = np.int)
 
@@ -806,7 +807,7 @@ def test_initialize_prune_df_classification():
 
     tree = random_forest.estimators_[0]
 
-    p_df = _initialize_prune_df(tree)
+    p_df = smooth_rf.tune_prune._initialize_prune_df(tree, X, y)
 
     assert p_df.shape == (tree.tree_.children_left.shape[0], 8), \
         "pruned_df should have 8 columns and num_nodes rows"
@@ -862,7 +863,7 @@ def test_initialize_prune_df_classification():
                      children_right,
                      value)
 
-    r_single_t_val = r_single_t(test)
+    r_single_t_val = smooth_rf.tune_prune.r_single_t(test)
 
     r_T_t = r_single_t_val.copy()
     r_T_t[4] = (r_T_t[5]*nn[5] + r_T_t[6]*nn[6])/nn[4]
@@ -870,7 +871,7 @@ def test_initialize_prune_df_classification():
     r_T_t[0] = (r_T_t[1]*nn[1] + r_T_t[2]*nn[2])/nn[0]
 
 
-    p_df = _initialize_prune_df(test)
+    p_df = smooth_rf.tune_prune._initialize_prune_df(test)
 
     assert np.any(p_df.idx == np.arange(p_df.shape[0], dtype = np.int)), \
         "idx should be ordered 0:num_nodes"
@@ -892,7 +893,7 @@ def test_initialize_prune_df_classification():
     assert np.all(p_df.c_right == children_right), \
         "static example, children_right incorrectly stored"
 
-    assert np.all(p_df.parent ==  calc_parent(test)), \
+    assert np.all(p_df.parent ==  smooth_rf.calc_parent(test)), \
         "static example, p_df.parent is same as calc_parent"
 
 
@@ -916,14 +917,14 @@ def test_initialize_prune_df_regression():
 
     tree = random_forest.estimators_[0]
 
-    p_df = _initialize_prune_df(tree)
+    p_df = smooth_rf.tune_prune._initialize_prune_df(tree, X, y)
 
-    assert p_df.shape == (tree.tree_.children_left.shape[0], 8), \
-        "pruned_df should have 8 columns and num_nodes rows"
+    assert p_df.shape == (tree.tree_.children_left.shape[0], 8+3), \
+        "pruned_df should have 11 columns and num_nodes rows"
 
     assert np.all(p_df.columns == ["idx", "R({t})", "R(T_t)",
-                                    "c_left", "c_right", "|T_t|",
-                                    "parent", "n_obs"]), \
+                                    "c_left", "c_right", "g1",
+                                    "n_obs", "n_oob","parent", "|T_t|"]), \
         "pruned_df column names are incorrect (or incorrectly ordered)"
 
     # static check
@@ -964,7 +965,7 @@ def test_initialize_prune_df_regression():
                      children_right,
                      impurity)
 
-    r_single_t_val = r_single_t(test)
+    r_single_t_val = smooth_rf.tune_prune.r_single_t(test)
 
     r_T_t = r_single_t_val.copy()
     r_T_t[4] = (r_T_t[5]*nn[5] + r_T_t[6]*nn[6])/nn[4]
@@ -972,7 +973,7 @@ def test_initialize_prune_df_regression():
     r_T_t[0] = (r_T_t[1]*nn[1] + r_T_t[2]*nn[2])/nn[0]
 
 
-    p_df = _initialize_prune_df(test)
+    p_df = smooth_rf.tune_prune._initialize_prune_df(test)
 
     assert np.any(p_df.idx == np.arange(p_df.shape[0], dtype = np.int)), \
         "idx should be ordered 0:num_nodes"
@@ -994,7 +995,7 @@ def test_initialize_prune_df_regression():
     assert np.all(p_df.c_right == children_right), \
         "static example, children_right incorrectly stored"
 
-    assert np.all(p_df.parent ==  calc_parent(test)), \
+    assert np.all(p_df.parent ==  smooth_rf.calc_parent(test)), \
         "static example, p_df.parent is same as calc_parent"
 
 

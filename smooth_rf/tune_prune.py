@@ -252,11 +252,11 @@ def _recursive_inner_prune(prune_df, out_df, current_idx):
     out_df.loc[out_df.idx == current_idx, "c_left"] = -2
     out_df.loc[out_df.idx == current_idx, "c_right"] = -2
 
-    out_df.loc[out_df.idx == curent_idx, "g1"] = np.nan
+    out_df.loc[out_df.idx == current_idx, "g1"] = np.nan
 
     return out_df
 
-def _initialize_prune_df(tree, X_trained, y_trained):
+def _initialize_prune_df(tree, X_trained=None, y_trained=None):
     """
     inner function for initializing prune_df (no pruning)
 
@@ -302,6 +302,11 @@ def _initialize_prune_df(tree, X_trained, y_trained):
     g1 : float
         g_1 = [R(t) - R(T_t)]/[|T_t| - 1]. Associated with pruning rule for
         CART trees. See CART chapter 2.
+
+    Details:
+    -------
+    The last 2 columns only are returned if X_trained and y_trained are
+    provided.
     """
     c_left = tree.tree_.children_left
     c_right = tree.tree_.children_right
@@ -326,7 +331,9 @@ def _initialize_prune_df(tree, X_trained, y_trained):
 
     prune_df = _recursive_initial_prune_df(prune_df, current_idx = 0)
     prune_df = _append_g1(prune_df)
-    prune_df = _append_oob_values(prune_df, tree, X_trained, y_trained)
+
+    if X_trained is not None and y_trained is not None:
+        prune_df = _append_oob_values(prune_df, tree, X_trained, y_trained)
 
     return prune_df
 
@@ -412,6 +419,7 @@ def _append_oob_values(prune_df, tree, X_trained, y_trained):
                    "sklearn.tree.tree.DecisionTreeClassifier "+\
                    "or a sklearn.tree.tree.DecisionTreeRegressor")
 
+    n_obs_trained = X_trained.shape[0]
 
     random_state = tree.random_state
     oob_indices = \
@@ -474,6 +482,7 @@ def test_append_oob_values_classification():
     #COME HERE
     # also should be updating testing for _initialize_prune_df
     #
+    "oob values classification"
 
 def _recursive_initial_prune_df(prune_df, current_idx):
     """
@@ -532,7 +541,7 @@ def r_single_t(tree):
     Details:
     --------
     R({t}) is the cost for for each node (classification or regression error)
-    Notes this is either (MSE or missclaffication rate)
+    Notes this is either (MSE or missclassification rate)
     """
 
     if type(tree) is sklearn.tree.tree.DecisionTreeRegressor:
