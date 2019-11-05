@@ -591,7 +591,6 @@ def calc_cost_l2_straight(y_oob, y_trained, ever_oob):
     """
     calc sum_i 1/(n_oob) |y_oob(i) - y_trained(i)|^2
     """
-
     return np.mean((y_oob[ever_oob] - y_trained[ever_oob])**2)
 
 
@@ -789,7 +788,7 @@ def stocastic_grad_descent_clean(Gamma, eta, idx_mat, oob_weights, y_trained,
                                         np.arange(idx_mat.shape[0],
                                                   dtype = np.int))
                 cost_best = calc_cost_l2_straight(y_oob,
-                                      y_trained[obs_idx],
+                                      y_trained,
                                       ever_oob)
                 cost_all.append(cost_best)
                 lamb_best = lamb
@@ -829,7 +828,7 @@ def stocastic_grad_descent_clean(Gamma, eta, idx_mat, oob_weights, y_trained,
                                     np.arange(idx_mat.shape[0],
                                               dtype = np.int))
             cost_new = calc_cost_l2_straight(y_oob,
-                                  y_trained[obs_idx],
+                                  y_trained,
                                   ever_oob)
             cost_all.append(cost_new)
 
