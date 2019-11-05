@@ -403,7 +403,7 @@ if levels is not None:
 else:
   add_levels_file = ""
 
-with open("data/"+data_set+"_both _"+add_levels_file+\
+with open("data/"+data_set+"_both_clean_"+add_levels_file+\
           reg_or_class+"_"+str(n_trees)+\
             "_"+str(my_seed)+".pkl",
           "wb") as pfile:
