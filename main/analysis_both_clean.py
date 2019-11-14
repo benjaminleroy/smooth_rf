@@ -232,29 +232,36 @@ def smooth_wrapper_clean(random_forest,
     else:
         adam_dict = None
 
-    adam_rf, c = smooth_rf.smooth_clean(
-        random_forest,
-        X_trained=X_train,
-        y_trained=y_train,
-        no_constraint=no_constraint,
-        sgd_max_num=5000,
-        all_obs=False, use_full_loss=True,
-        sgd_n_obs=40,
-        initial_lamb_seed=initial_lamb,
-        parents_all=parent_all,
-        dist_mat_style=inner_distance,
-        distance_style=d_style,
-        adam=adam_dict,
-        verbose=False,
-        levels=levels)
+    try:
+        adam_rf, c = smooth_rf.smooth_clean(
+            random_forest,
+            X_trained=X_train,
+            y_trained=y_train,
+            no_constraint=no_constraint,
+            sgd_max_num=5000,
+            all_obs=False, use_full_loss=True,
+            sgd_n_obs=40,
+            initial_lamb_seed=initial_lamb,
+            parents_all=parent_all,
+            dist_mat_style=inner_distance,
+            distance_style=d_style,
+            adam=adam_dict,
+            verbose=False,
+            levels=levels)
 
-    best_oob = np.min(c)
+        best_oob = np.min(c)
+
+        scoring = assess_rf(adam_rf, X_test, y_test)
+        info = adam_rf.lamb
+    except:
+        scoring = "error in process"
+        info = "error in process"
+        best_oob = "error in process"
 
     if initial_lamb is not None:
         il = str(initial_lamb)
     else:
         il = "rf"
-
 
 
     name = "element_opt" + ",dist_style:" + d_style + add_levels +\
@@ -263,9 +270,6 @@ def smooth_wrapper_clean(random_forest,
         ",constraints:" + str(not no_constraint) +\
         ",initial_lamb:" + il +\
         ",adam_options:" + str(adam_values).replace(", ", "_")
-
-    scoring = assess_rf(adam_rf, X_test, y_test)
-    info = adam_rf.lamb
 
     return name, scoring, info, best_oob
 
