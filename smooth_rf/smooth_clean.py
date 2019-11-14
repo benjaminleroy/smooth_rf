@@ -755,7 +755,8 @@ def stocastic_grad_descent_clean(Gamma, eta, idx_mat, oob_weights, y_trained,
     if Gamma.shape[1] != lamb_init.shape[0]:
         raise TypeError("lamb_init needs to be the same length as the "+\
                         "number of columns in Gamma and eta")
-    if not no_constraint and (np.sum(lamb_init)!=1 or np.any(lamb_init < 0)):
+    if not no_constraint and ((not np.allclose(np.sum(lamb_init),1)) or\
+                              np.any(lamb_init < 0)):
         raise TypeError("For simplicity please initialize lamb_init with "+\
                         "a feasible value \n(ex: np.ones(Gamma.shape[1])/"+\
                         "Gamma.shape[1] )")
