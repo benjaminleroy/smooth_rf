@@ -110,6 +110,7 @@ def calc_depth_for_forest(input_forest, verbose=True):
 def prox_project(y):
     """
     Projection function onto the space defined by {x:x_i >= 0, sum_i x_i =1}.
+
     Arguments:
     ----------
     y : array (n, )
@@ -120,28 +121,35 @@ def prox_project(y):
         y projected into the above space
     Notes:
     ------
-    This algorithm comes from
-    - https://arxiv.org/pdf/1101.6081.pdf
-    - https://www.mathworks.com/matlabcentral/fileexchange/30332-projection-onto-simplex
+    Projection onto simplex
+
+    Details:
+    --------
+    code similar to R implimentation olpsR::projsplx
+
+
+    The algorithm is implemented according to Duchi et al. 2008. The original
+    Matlab implementation by John Duchi (jduchi@cs.berkeley.edu) can be found
+    on https://web.stanford.edu/~jduchi/projects/DuchiShSiCh08/ProjectOntoSimplex.m
+
+    References:
+    -----------
+
+    Duchi, J.; Shalev-Shwartz, S.; Singer, Y. & Chandra, T. Efficient projections onto the l 1-ball for learning in high dimensions, Proceedings of the 25th international conference on Machine learning, 2008, 272-279 https://dl.acm.org/citation.cfm?id=1390191
+
+
     """
-    m = y.shape[0]
-    bget = False
+    n = y.shape[0]
+    y[y < 0] = 0
 
-    s = np.sort(y)[::-1]
-    tmpsum = 0
+    u = np.sort(y)[::-1]
+    sv = np.cumsum(u)
 
-    for idx in np.arange(m-1):
-        tmpsum = tmpsum + s[idx]
-        tmax = (tmpsum -1)/(idx + 1)
+    rho = np.arange(n, dtype = np.int)[y > (sv - 1)/(np.arange(1, n + 1))]
 
-        if tmax >= s[idx + 1]:
-            bget = True
-            break
-
-    if not bget:
-        tmax = (tmpsum + s[m-1] - 1)/m
-
-    y_prox = (y-tmax)*(y-tmax > 0)
+    theta = np.max([0, (sv[rho] - 1)/rho])
+    y_prox = y - theta
+    y_prox[y_prox < 0] = 0
 
     return y_prox
 
@@ -178,6 +186,9 @@ def prox_project_ce(y, class_eps = 1e-4):
     is small, it should be close geometrically.
 
     """
+    assert False, \
+        "this function needs to be updated, also test prox_project (and maybe rename)"
+
     m = y.shape[0]
     bget = False
 
