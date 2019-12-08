@@ -144,10 +144,10 @@ def prox_project(y):
 
     u = np.sort(y)[::-1]
     sv = np.cumsum(u)
-
+    #pdb.set_trace()
     rho = np.arange(n, dtype = np.int)[y > (sv - 1)/(np.arange(1, n + 1))]
 
-    theta = np.max([0, (sv[rho] - 1)/rho])
+    theta = np.max([np.max((sv[rho] - 1)/(rho + 1)), 0])
     y_prox = y - theta
     y_prox[y_prox < 0] = 0
 
