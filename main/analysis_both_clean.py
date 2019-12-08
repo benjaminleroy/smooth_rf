@@ -232,31 +232,31 @@ def smooth_wrapper_clean(random_forest,
     else:
         adam_dict = None
 
-    try:
-        adam_rf, c = smooth_rf.smooth_clean(
-            random_forest,
-            X_trained=X_train,
-            y_trained=y_train,
-            no_constraint=no_constraint,
-            sgd_max_num=5000,
-            all_obs=False, use_full_loss=True,
-            sgd_n_obs=40,
-            initial_lamb_seed=initial_lamb,
-            parents_all=parent_all,
-            dist_mat_style=inner_distance,
-            distance_style=d_style,
-            adam=adam_dict,
-            verbose=False,
-            levels=levels)
+    #try:
+    adam_rf, c = smooth_rf.smooth_clean(
+        random_forest,
+        X_trained=X_train,
+        y_trained=y_train,
+        no_constraint=no_constraint,
+        sgd_max_num=5000,
+        all_obs=False, use_full_loss=True,
+        sgd_n_obs=40,
+        initial_lamb_seed=initial_lamb,
+        parents_all=parent_all,
+        dist_mat_style=inner_distance,
+        distance_style=d_style,
+        adam=adam_dict,
+        verbose=False,
+        levels=levels)
 
-        best_oob = np.min(c)
+    best_oob = np.min(c)
 
-        scoring = assess_rf(adam_rf, X_test, y_test)
-        info = adam_rf.lamb
-    except:
-        scoring = "error in process"
-        info = "error in process"
-        best_oob = "error in process"
+    scoring = assess_rf(adam_rf, X_test, y_test)
+    info = adam_rf.lamb
+    # except:
+    #     scoring = "error in process"
+    #     info = "error in process"
+    #     best_oob = "error in process"
 
     if initial_lamb is not None:
         il = str(initial_lamb)
