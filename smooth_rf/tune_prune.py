@@ -1,3 +1,12 @@
+# TODO:
+#------
+# Comment as of December 22 :::
+# update with R_oob (just MSE_oob) - doesn't make sense per tree - need across
+# forest for OOB loss (why we re-did the whole analysis)
+#
+# NEW FUNCTION NEEDED:
+# we need to iteratively prune and keep track of alpha (not done as of Dec 26)
+
 import numpy as np
 import pandas as pd
 
@@ -16,89 +25,55 @@ from collections import Counter
 import pdb
 
 
-# def initialize_prune_df_old(tree):
-#     c_left = tree.tree_.children_left
-#     c_right = tree.tree_.children_right
-#     parents = calc_parent(tree)
-#     n_obs = tree.tree_.weighted_n_node_samples
-#     n = c_left.shape[0]
-#     r_single_t_val = r_single_t(tree)
-#     prune_df = pd.DataFrame(data = {"idx":np.arange(n),
-#                                     "R({t})":r_single_t_val,
-#                                     "R(T_t)":r_single_t_val,
-#                                     "c_left":c_left,
-#                                     "c_right":c_right,
-#                                     "|T_t|":np.zeros(n, dtype=np.int),
-#                                     "parent":parents,
-#                                     "n_obs":n_obs})
+# def prune_tree_old(tree, X_tune, y_tune):
+#     """
+#     this function fully prunes the tree while keeping track of
+#     alpha values and associated nodes for future prune
 
-#     # initialize queue with leaf nodes
-#     queue = list(prune_df.idx[prune_df.c_left == -1])
-#     print(queue)
+#     thoughts:
+#     1. g_1 (critical value) is defined [R(t) - R(T_t)]/[|T_t| - 1]
+#     1.1. select minimum g_1 to be the new value
+#     1.1.1. will need to update g_1 throught the tree
 
-#     if len(queue) < 2:
-#         raise ValueError("Tree is malformed or is only a root node (has < 2 leafs)")
-#     current_idx = queue.pop(0)
+#     """
 
-#     while current_idx is not None:
-#         print(queue)
-#         # leaf
-#         if (prune_df.loc[prune_df.idx == current_idx, "c_left"] == -1).values:
-#             prune_df.loc[prune_df.idx == current_idx,"|T_t|"] = 1
+#     random_state = t.random_state
+#     oob_indices = \
+#         sklearn.ensemble.forest._generate_unsampled_indices(
+#                                                          random_state,
+#                                                          n_obs_trained)
+#     X_tune = X_trained[oob_indices,:]
+#     y_tune = y_trained[oob_indices]
 
-#             parent_idx = prune_df.loc[prune_df.idx == current_idx, "parent"].values[0]
-#             if parent_idx != -1:
-#                 if parent_idx not in queue:
-#                     queue.append(parent_idx)
-#                 else:
-#                     #pdb.set_trace()
-#                     queue.pop(np.int(np.arange(len(queue), dtype = np.int)[queue == parent_idx]))
-#                     queue.append(parent_idx)
+#     if rf_type == "class":
+#         y_tune = np.array(pd.get_dummies(y_tune))
 
-#         else:
-#             #pdb.set_trace()
-#             prune_df.loc[prune_df.idx == current_idx, "|T_t|"] =\
-#                 prune_df.loc[prune_df.c_left[prune_df.idx == current_idx], "|T_t|"] +\
-#                 prune_df.loc[prune_df.c_right[prune_df.idx == current_idx], "|T_t|"]
-#             prune_df.loc[prune_df.idx == current_idx,"R(T_t)"] =\
-#                 (prune_df.loc[prune_df.c_left[prune_df.idx == current_idx], "R(T_t)"] *\
-#                  prune_df.loc[prune_df.c_left[prune_df.idx == current_idx],"n_obs"] +\
-#                  prune_df.loc[prune_df.c_right[prune_df.idx == current_idx], "R(T_t)"] *\
-#                  prune_df.loc[prune_df.c_right[prune_df.idx == current_idx],"n_obs"]) /\
-#                 prune_df.loc[prune_df.idx == current_idx, "n_obs"]
-
-#         try:
-#             current_idx = queue.pop(0)
-#         except:
-#             current_idx = None
+#     prune_df = _initialize_prune_df(tree)
+#     prune_df_full = _inner_prune(prune_df, prune_idx = 0) # to the root
 
 
-def prune_tree(tree, data):
+#     # COME HERE
+#     # need pretty full update
+
+#     raise ValueError("need update here")
+
+def prune_tree(tree):
     """
-    this function fully prunes the tree while keeping track of R_oob values
-    provides alpha values and associated nodes for future prune
+    this function fully prunes the tree while keeping track of
+    alpha values and associated nodes for future prune
 
     thoughts:
     1. g_1 (critical value) is defined [R(t) - R(T_t)]/[|T_t| - 1]
     1.1. select minimum g_1 to be the new value
     1.1.1. will need to update g_1 throught the tree
 
-    2. could keep track / precalculate oob MSE for each node (is this easy)? - R_oob({t})
-    2.1. need to track n_oob
-    2.2. then could calculate MSE_alpha from n_oob * MSE relative to only leaf nodes
     """
+    prune_df = _initialize_prune_df(tree)
+    #prune_df_full = _inner_prune(prune_df, prune_idx = 0) # to the root
 
-    random_state = t.random_state
-    oob_indices = \
-        sklearn.ensemble.forest._generate_unsampled_indices(
-                                                         random_state,
-                                                         n_obs_trained)
-    X_tune = X_trained[oob_indices,:]
-    y_tune = y_trained[oob_indices]
 
-    if rf_type == "class":
-        y_tune = np.array(pd.get_dummies(y_tune))
 
+    return prune_df_full
 
 
 def _inner_prune(prune_df, prune_idx):
@@ -179,10 +154,6 @@ def _inner_prune_update_upward(prune_df, prune_idx):
              out_df.loc[out_df.idx == current_idx, "R(T_t)"].values[0]) /\
             (out_df.loc[out_df.idx == current_idx, "|T_t|"].values[0] - 1)
 
-        # COME HERE
-        # need to update OOB values
-        raise ValueError("need update here")
-
 
         if (out_df.loc[out_df.idx == current_idx, "parent"] != -1).values[0]:
             # ^ if not root node
@@ -233,11 +204,6 @@ def _inner_prune_down(prune_df, prune_idx):
         out_df = _recursive_inner_prune(prune_df, out_df, np.int(prune_df.loc[prune_df.idx == prune_idx, "c_left"].values))
         out_df = _recursive_inner_prune(prune_df, out_df, np.int(prune_df.loc[prune_df.idx == prune_idx, "c_right"].values))
 
-    # COME HERE
-    # need to update OOB values
-    raise ValueError("need update here")
-
-
     return out_df
 
 
@@ -256,7 +222,7 @@ def _recursive_inner_prune(prune_df, out_df, current_idx):
 
     return out_df
 
-def _initialize_prune_df(tree, X_trained=None, y_trained=None):
+def _initialize_prune_df(tree):
     """
     inner function for initializing prune_df (no pruning)
 
@@ -264,13 +230,6 @@ def _initialize_prune_df(tree, X_trained=None, y_trained=None):
     ----------
     tree : sklearn style tree (DecisionTreeClassifier or DecisionTreeRegressor)
         grown tree
-    X_trained : array (n, p)
-        X data array used to create the inputted tree. Note that this
-        is assumed to be the correct data
-        (default is none)
-    y_trained : array (n, )
-        y data array used to create the inputted tree.
-
 
     Returns:
     --------
@@ -303,10 +262,6 @@ def _initialize_prune_df(tree, X_trained=None, y_trained=None):
         g_1 = [R(t) - R(T_t)]/[|T_t| - 1]. Associated with pruning rule for
         CART trees. See CART chapter 2.
 
-    Details:
-    -------
-    The last 2 columns only are returned if X_trained and y_trained are
-    provided.
     """
     c_left = tree.tree_.children_left
     c_right = tree.tree_.children_right
@@ -332,10 +287,88 @@ def _initialize_prune_df(tree, X_trained=None, y_trained=None):
     prune_df = _recursive_initial_prune_df(prune_df, current_idx = 0)
     prune_df = _append_g1(prune_df)
 
-    if X_trained is not None and y_trained is not None:
-        prune_df = _append_oob_values(prune_df, tree, X_trained, y_trained)
-
     return prune_df
+
+# def _initialize_prune_df_old(tree, X_trained=None, y_trained=None):
+#     """
+#     inner function for initializing prune_df (no pruning)
+
+#     Arguments:
+#     ----------
+#     tree : sklearn style tree (DecisionTreeClassifier or DecisionTreeRegressor)
+#         grown tree
+#     X_trained : array (n, p)
+#         X data array used to create the inputted tree. Note that this
+#         is assumed to be the correct data
+#         (default is none)
+#     y_trained : array (n, )
+#         y data array used to create the inputted tree.
+
+
+#     Returns:
+#     --------
+#     prune_df : pd.DataFrame
+#         data frame with information about each node (before any pruning occurs)
+
+#     Details:
+#     --------
+#     prune_df contains the following columns:
+#     idx : int
+#         index of node in tree
+#     R({t}) : float
+#         Training risk associated with tree with just this node
+#     R(T_t) : float
+#         Training risk associated with tree with all non-pruned nodes below this
+#         node
+#     c_left : int
+#         idx of node that is current nodes left child (when a leaf = -1, when
+#         pruned = -2)
+#     c_right : int
+#         idx of node that is current nodes right child (when a leaf = -1, when
+#         pruned = -2)
+#     |T_t| : int
+#         number of leaf nodes below this node (0 if pruned, 1 if leaf, etc)
+#     parent : int
+#         idx for parent of current node (-1 if root node)
+#     n_obs : float (but should be thought of as an integer)
+#         number of training observations that fell into this node
+#     g1 : float
+#         g_1 = [R(t) - R(T_t)]/[|T_t| - 1]. Associated with pruning rule for
+#         CART trees. See CART chapter 2.
+
+#     Details:
+#     -------
+#     The last 2 columns only are returned if X_trained and y_trained are
+#     provided.
+#     """
+#     c_left = tree.tree_.children_left
+#     c_right = tree.tree_.children_right
+#     parents = calc_parent(tree)
+#     n_obs = tree.tree_.weighted_n_node_samples
+#     n = c_left.shape[0]
+#     r_single_t_val = r_single_t(tree)
+#     prune_df = pd.DataFrame(data = {"idx":np.arange(n),
+#                                     "R({t})":r_single_t_val,
+#                                     "R(T_t)":r_single_t_val,
+#                                     "c_left":c_left,
+#                                     "c_right":c_right,
+#                                     "|T_t|":np.zeros(n, dtype=np.int),
+#                                     "parent":parents,
+#                                     "n_obs":n_obs#,
+#                                     #
+#                                     },
+#                             columns = ["idx", "R({t})", "R(T_t)",
+#                                        "c_left", "c_right", "|T_t|",
+#                                        "parent", "n_obs"])
+
+
+#     prune_df = _recursive_initial_prune_df(prune_df, current_idx = 0)
+#     prune_df = _append_g1(prune_df)
+
+#     if X_trained is not None and y_trained is not None:
+#         prune_df = _append_oob_values(prune_df, tree, X_trained, y_trained)
+
+#     return prune_df
 
 
 def _append_g1(prune_df):
@@ -408,6 +441,8 @@ def test_append_g1():
 
 def _append_oob_values(prune_df, tree, X_trained, y_trained):
     """
+    NOTE: This shouldn't be used
+
     "R_oob({t})" and "n_oob" only? - oob_risk will be calculated with these
     """
     if type(tree) is sklearn.tree.tree.DecisionTreeRegressor:
@@ -472,18 +507,6 @@ def _append_oob_values(prune_df, tree, X_trained, y_trained):
     return out_df
 
 
-
-
-def test_append_oob_values_regression():
-    #COME HERE
-    "checking oob calculations..."
-
-def test_append_oob_values_classification():
-    #COME HERE
-    # also should be updating testing for _initialize_prune_df
-    #
-    "checking oob calculations..."
-    "oob values classification"
 
 def _recursive_initial_prune_df(prune_df, current_idx):
     """
