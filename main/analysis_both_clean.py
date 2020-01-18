@@ -459,7 +459,7 @@ else:
 with open("data/"+data_set+"_both_clean_"+add_levels_file+\
           reg_or_class+"_"+str(n_trees)+\
             "_"+str(my_seed)+\
-            "_"+datatime.date.today().strftime("%b-%d-%Y") +\
+            "_"+datetime.date.today().strftime("%b-%d-%Y") +\
             ".pkl",
           "wb") as pfile:
     pickle.dump({"seed":my_seed,
