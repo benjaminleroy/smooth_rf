@@ -232,7 +232,7 @@ def assess_rf(random_forest, X_test, y_test):
     if type(random_forest) == sklearn.ensemble.RandomForestRegressor:
         scoring = sklearn.metrics.mean_squared_error
     elif type(random_forest) == sklearn.ensemble.RandomForestClassifier:
-        scoring = sklearn.metrics.accuracy_score
+        scoring = lambda x, y: 1 - sklearn.metrics.accuracy_score(x,y)
     else:
         ValueError("inputed random forest's class is not 1 of "+\
                    "the expected options")
@@ -388,6 +388,7 @@ def smooth_wrapper_clean(random_forest,
         levels=levels) # passed from global structure
 
     best_oob = np.min(c)
+    final_oob = c[-1]
 
     scoring = assess_rf(adam_rf, X_test, y_test)
     info = adam_rf.lamb
@@ -407,7 +408,7 @@ def smooth_wrapper_clean(random_forest,
         ",initial_lamb:" + il +\
         ",adam_options:" + str(adam_values).replace(", ", "_")
 
-    return name, scoring, info, best_oob
+    return name, scoring, info, best_oob, final_oob
 
 
 #### parallelization process --------------------------------------------------
@@ -443,7 +444,7 @@ s_all_output = Parallel(n_jobs=-3, verbose=10)(
 
 
 for name, scoring, info, best_oob in s_all_output:
-    scoring_dict["smooth_element_based,"+name] = [scoring, best_oob]
+    scoring_dict["smooth_element_based,"+name] = [scoring, best_oob, final_oob]
     info_dict["smooth_element_based,"+name] = info
 
 adam_spent = time.time() - time_start
